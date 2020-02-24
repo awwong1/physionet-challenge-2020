@@ -17,4 +17,7 @@ jupyter nbextension enable --py widgetsnbextension --sys-prefix
 jupyter labextension install @jupyter-widgets/jupyterlab-manager
 jupyter lab clean
 jupyter lab build
+
+# to test
+python -m unittest discover
 ```
