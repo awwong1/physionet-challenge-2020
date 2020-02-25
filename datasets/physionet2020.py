@@ -67,7 +67,7 @@ class PhysioNet2020Dataset(Dataset):
             ) as t:
                 if self.proc <= 0:
                     self.record_lens = dict(
-                        PhysioNet2020Dataset.derive_meta(rn) for rn in t
+                        PhysioNet2020Dataset._derive_meta(rn) for rn in t
                     )
                 else:
                     freeze_support()

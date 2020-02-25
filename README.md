@@ -19,5 +19,8 @@ jupyter lab clean
 jupyter lab build
 
 # to test
-python -m unittest discover
+python3 -m unittest discover
+
+# SimpleCNN example
+python3 main.py configs/simple_cnn.json
 ```
