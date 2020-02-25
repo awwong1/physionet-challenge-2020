@@ -1,0 +1,50 @@
+{
+  "exp_name": "PhysioNet2020/SimpleCNN",
+  "agent": "agents.physionet2020.ClassificationAgent",
+  "dataset": {
+      "name": "datasets.physionet2020.PhysioNet2020Dataset",
+      "kwargs": {
+        "data_dir": "Training_WFDB",
+        "fs": 200,
+        "max_seq_len": 4000,
+        "proc": 8,
+        "ensure_equal_len": true,
+        "signal_last": true
+      }
+  },
+  "val_split": 0.1,
+  "train_loader": {
+      "batch_size": 64,
+      "num_workers": 2,
+      "shuffle": true,
+      "pin_memory": true
+  },
+  "val_loader": {
+      "batch_size": 32,
+      "num_workers": 2,
+      "shuffle": false,
+      "pin_memory": true
+  },
+  "model": {
+    "name": "models.simple_cnn.SimpleCNN"
+  },
+  "criterion": {
+    "name": "torch.nn.BCEWithLogitsLoss"
+  },
+  "optimizer": {
+    "name": "torch.optim.Adam",
+    "kwargs": {
+      "lr": 0.05
+    }
+  },
+  "scheduler": {
+    "name": "torch.optim.lr_scheduler.StepLR",
+    "kwargs": {
+      "step_size": 7,
+      "gamma": 0.2
+    }
+  },
+  "epochs": 35,
+  "log_per_num_batch": 7,
+  "log_num_activation_samples": 1
+}

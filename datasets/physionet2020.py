@@ -19,11 +19,14 @@ __all__ = ["PhysioNet2020Dataset"]
 class PhysioNet2020Dataset(Dataset):
     """PhysioNet 2020 Challenge Dataset.
     """
+
     BASE_FS = 500
     LABELS = ("Normal", "AF", "I-AVB", "LBBB",
               "RBBB", "PAC", "PVC", "STD", "STE")
 
-    def __init__(self, data_dir, fs=BASE_FS, max_seq_len=2000, proc=0):
+    def __init__(
+        self, data_dir, fs=BASE_FS, max_seq_len=2000, proc=0, ensure_equal_len=False, signal_last=False
+    ):
         """Initialize the PhysioNet 2020 Challenge Dataset
         data_dir: path to *.hea files
         fs: Sampling frequency to return tensors as (default: 500 samples per second)
@@ -36,12 +39,16 @@ class PhysioNet2020Dataset(Dataset):
         self.fs = fs
         self.max_seq_len = max_seq_len
         self.proc = proc
-        self.record_lens = {}   # length of each record (sample size)
+        self.ensure_equal_len = ensure_equal_len
+        self.signal_last = signal_last  # if true, yield signals as (CHANNEL, SIGNAL)
+        self.record_lens = {}  # length of each record (sample size)
         self.record_samps = {}  # number of max_seq_len segments per record
-        self.idx_to_key_rel = {}    # dataset index to record key
+        self.idx_to_key_rel = {}  # dataset index to record key
 
-        self.record_names = sorted([
-            fn.split(".hea")[0] for fn in glob(os.path.join(data_dir, "*.hea"))])
+        self.record_names = sorted(
+            [fn.split(".hea")[0]
+             for fn in glob(os.path.join(data_dir, "*.hea"))]
+        )
         self.initialize_length_references()
 
     def __len__(self):
@@ -53,17 +60,26 @@ class PhysioNet2020Dataset(Dataset):
         try:
             with open(ds_len_ref_pth, "r") as f:
                 self.record_lens = json.load(f)
-        except:
+        except Exception:
             # if not, build and save the dataset length references
-            with tqdm(self.record_names, desc="Building dataset length references") as t:
+            with tqdm(
+                self.record_names, desc="Building dataset length references"
+            ) as t:
                 if self.proc <= 0:
                     self.record_lens = dict(
-                        PhysioNet2020Dataset.derive_meta(rn) for rn in t)
+                        PhysioNet2020Dataset.derive_meta(rn) for rn in t
+                    )
                 else:
-                    with Pool(self.proc, initializer=tqdm.set_lock,
-                              initargs=(tqdm.get_lock(),)) as p:
-                        self.record_lens = dict(p.imap_unordered(
-                            PhysioNet2020Dataset._derive_meta, t))
+                    freeze_support()
+                    with Pool(
+                        self.proc,
+                        initializer=tqdm.set_lock,
+                        initargs=(tqdm.get_lock(),),
+                    ) as p:
+                        self.record_lens = dict(
+                            p.imap_unordered(
+                                PhysioNet2020Dataset._derive_meta, t)
+                        )
             with open(ds_len_ref_pth, "w") as f:
                 json.dump(self.record_lens, f)
 
@@ -71,7 +87,8 @@ class PhysioNet2020Dataset(Dataset):
         for rn in self.record_names:
             len_500hz = self.record_lens[rn]
             # resample to specified fs
-            len_resamp = int(len_500hz / PhysioNet2020Dataset.BASE_FS * self.fs)
+            len_resamp = int(
+                len_500hz / PhysioNet2020Dataset.BASE_FS * self.fs)
             self.record_lens[rn] = len_resamp
 
             r_num_samples = math.ceil(len_resamp / self.max_seq_len)
@@ -95,12 +112,23 @@ class PhysioNet2020Dataset(Dataset):
         # offset by the relative index
         start_idx = self.max_seq_len * rel_idx
         end_idx = min(len(sig), start_idx + self.max_seq_len)
-        sig = torch.FloatTensor(sig[start_idx:end_idx])
+        if self.ensure_equal_len:
+            # start to end must equal max_seq_len
+            sig = torch.FloatTensor(sig[end_idx - self.max_seq_len: end_idx])
+            if len(sig) < self.max_seq_len:
+                pad = self.max_seq_len - len(sig)
+                sig = torch.nn.functional.pad(
+                    sig, (0, 0, pad, 0), "constant", 0)
+        else:
+            sig = torch.FloatTensor(sig[start_idx:end_idx])
+
+        if self.signal_last:
+            sig = sig.transpose(0, 1)
 
         target = [0.0] * len(self.LABELS)
         for dxi in dx_grp.group("dx").split(","):
             target[self.LABELS.index(dxi)] = 1
-        target = torch.ByteTensor(target)
+        target = torch.FloatTensor(target)
 
         return sig, target
 
