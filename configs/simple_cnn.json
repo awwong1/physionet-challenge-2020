@@ -5,7 +5,7 @@
       "name": "datasets.physionet2020.PhysioNet2020Dataset",
       "kwargs": {
         "data_dir": "Training_WFDB",
-        "fs": 200,
+        "fs": 500,
         "max_seq_len": 4000,
         "proc": 8,
         "ensure_equal_len": true,
@@ -40,11 +40,11 @@
   "scheduler": {
     "name": "torch.optim.lr_scheduler.StepLR",
     "kwargs": {
-      "step_size": 7,
+      "step_size": 2,
       "gamma": 0.2
     }
   },
-  "epochs": 35,
-  "log_per_num_batch": 7,
-  "log_num_activation_samples": 1
+  "epochs": 10,
+  "log_per_num_batch": 3
 }
+
