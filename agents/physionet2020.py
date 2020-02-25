@@ -276,10 +276,10 @@ class ClassificationAgent(BaseAgent):
     @staticmethod
     def calculate_evaluation(predictions, targets, threshold=0.9):
         scaler = MinMaxScaler()
-        scaled_prediction = scaler.fit_transform(predictions.T).T
+        scaled_prediction = scaler.fit_transform(predictions.cpu().T).T
         output_predictions = scaled_prediction >= threshold
 
-        target_ground_truths = targets.numpy() > 0
+        target_ground_truths = targets.cpu().numpy() > 0
 
         acc, f_measure, f_beta, g_beta = compute_beta_score(
             target_ground_truths, output_predictions)
