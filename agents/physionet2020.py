@@ -75,6 +75,8 @@ class ClassificationAgent(BaseAgent):
         try:
             # Attempt tensorboard model graph visualization
             vis_inp, _ = next(iter(self.val_set))
+            if self.use_cuda:
+                vis_inp = vis_inp.cuda()
             self.tb_sw.add_graph(self.model, vis_inp.unsqueeze(0))
         except Exception as e:
             self.logger.warn(e)

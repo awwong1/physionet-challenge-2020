@@ -2,15 +2,8 @@
   "exp_name": "PhysioNet2020/SimpleCNN",
   "agent": "agents.physionet2020.ClassificationAgent",
   "dataset": {
-      "name": "datasets.physionet2020.PhysioNet2020Dataset",
-      "kwargs": {
-        "data_dir": "Training_WFDB",
-        "fs": 500,
-        "max_seq_len": 4000,
-        "proc": 8,
-        "ensure_equal_len": true,
-        "signal_last": true
-      }
+      "name": "datasets.processed.ProcessedDataset",
+      "args": ["data/fs250-msl4000"]
   },
   "val_split": 0.1,
   "train_loader": {
