@@ -1,12 +1,12 @@
 {
   "exp_name": "PhysioNet2020/DataPreprocessing",
   "agent": "agents.data_preprocess.DatasetPreprocessAgent",
-  "out_dir": "data/fs250-msl4000",
+  "out_dir": "data/fs500-msl4000",
   "dataset": {
       "name": "datasets.physionet2020.PhysioNet2020Dataset",
       "kwargs": {
         "data_dir": "Training_WFDB",
-        "fs": 250,
+        "fs": 500,
         "max_seq_len": 4000,
         "ensure_equal_len": true,
         "signal_last": true

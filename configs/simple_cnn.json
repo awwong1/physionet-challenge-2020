@@ -3,17 +3,17 @@
   "agent": "agents.physionet2020.ClassificationAgent",
   "dataset": {
       "name": "datasets.processed.ProcessedDataset",
-      "args": ["data/fs250-msl4000"]
+      "args": ["data/fs500-msl4000"]
   },
   "val_split": 0.1,
   "train_loader": {
-      "batch_size": 256,
-      "num_workers": 80,
+      "batch_size": 128,
+      "num_workers": 16,
       "shuffle": true,
       "pin_memory": true
   },
   "val_loader": {
-      "batch_size": 128,
+      "batch_size": 64,
       "num_workers": 16,
       "shuffle": false,
       "pin_memory": true
@@ -27,17 +27,18 @@
   "optimizer": {
     "name": "torch.optim.Adam",
     "kwargs": {
-      "lr": 0.05
+      "lr": 0.01
     }
   },
   "scheduler": {
     "name": "torch.optim.lr_scheduler.StepLR",
     "kwargs": {
-      "step_size": 2,
-      "gamma": 0.2
+      "step_size": 6,
+      "gamma": 0.1
     }
   },
-  "epochs": 10,
-  "log_per_num_batch": 3
+  "epochs": 30,
+  "log_per_num_batch": 3,
+  "use_amp": true
 }
 

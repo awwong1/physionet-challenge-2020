@@ -24,7 +24,11 @@ python3 -m unittest discover
 # Basic example (debugging locally)
 python3 main.py configs/debug_simple_cnn.json
 
+# NVIDIA/apex Automatic Mixed Precision support
+git submodule update
+pip install ./apex/
+
 # SimpleCNN example
-python3 main.py configs/preprocess_250hz_4000len.json  # converts *.hea and *.mat into *.npz files
+python3 main.py configs/preprocess_500hz_4000len.json  # converts *.hea and *.mat into *.npz files
 python3 main.py configs/simple_cnn.json
 ```

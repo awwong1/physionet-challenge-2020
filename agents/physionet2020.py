@@ -4,6 +4,7 @@ from time import time
 
 import numpy as np
 import torch
+from apex import amp
 from sklearn.preprocessing import MinMaxScaler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
@@ -35,6 +36,8 @@ class ClassificationAgent(BaseAgent):
     - validate_zero (bool): if true, run a validation epoch pre-training
     - checkpoint (str): filename for most recent checkpoint
     - best_checkpoint (str): filename for best checkpoint
+    - use_amp (boolean): if true, nvidia/apex acceleration should be used
+    - amp_opt_level (str): "O1" optimization default
     """
 
     def __init__(self, config):
@@ -49,6 +52,8 @@ class ClassificationAgent(BaseAgent):
 
         # Setup CUDA
         self._setup_cuda(config)
+        self.use_amp = config.get("use_amp", False)
+        self.amp_opt_level = config.get("amp_opt_level", "O1")
 
         # Initialize dataset and dataloaders
         ds = init_class(config.get("dataset"))
@@ -58,12 +63,10 @@ class ClassificationAgent(BaseAgent):
             ds, (train_len, val_len,)
         )
         self.train_loader = torch.utils.data.DataLoader(
-            self.train_set,
-            **config.get("train_loader"),
+            self.train_set, **config.get("train_loader"),
         )
         self.val_loader = torch.utils.data.DataLoader(
-            self.val_set,
-            **config.get("val_loader"),
+            self.val_set, **config.get("val_loader"),
         )
         # self.train_set, self.train_loader = BaseAgent._setup_data(config.get("train"))
         # self.val_set, self.val_loader = BaseAgent._setup_data(config.get("val"))
@@ -83,13 +86,11 @@ class ClassificationAgent(BaseAgent):
 
         # Initialize task loss criterion, optimizer, scheduler
         self.criterion = init_class(config.get("criterion"))
-        self.optimizer = init_class(config.get(
-            "optimizer"), self.model.parameters())
+        self.optimizer = init_class(config.get("optimizer"), self.model.parameters())
         sched_config = config.get("scheduler")
         if sched_config:
             self.logger.info("Scheduler: %s", pformat(sched_config))
-            self.scheduler = init_class(
-                config.get("scheduler"), self.optimizer)
+            self.scheduler = init_class(config.get("scheduler"), self.optimizer)
         else:
             # this is a no-op scheduler that does not change the LR
             self.scheduler = torch.optim.lr_scheduler.StepLR(
@@ -97,15 +98,15 @@ class ClassificationAgent(BaseAgent):
             )
 
         if self.use_cuda and len(self.gpu_ids) > 1:
+            if self.use_amp:
+                amp.initialize(self.model, self.optimizer, opt_level=self.amp_opt_level)
             self.model = torch.nn.DataParallel(self.model)
-            self.model.cuda()
 
         # number of epochs to run
         self.epochs = config.get("epochs", 123)
         # checkpoint file path names
         self.checkpoint = config.get("checkpoint", "checkpoint.pth.tar")
-        self.best_checkpoint = config.get(
-            "best_checkpoint", "model_best.pth.tar")
+        self.best_checkpoint = config.get("best_checkpoint", "model_best.pth.tar")
 
         self.epoch = 0
         self.best_acc1 = 0
@@ -118,8 +119,7 @@ class ClassificationAgent(BaseAgent):
         self.logger.info("Train Dataset: %s", self.train_set)
         self.logger.info("Train batches per epoch: %d", len(self.train_loader))
         self.logger.info("Validation Dataset: %s", self.val_set)
-        self.logger.info("Validation batches per epoch: %d",
-                         len(self.val_loader))
+        self.logger.info("Validation batches per epoch: %d", len(self.val_loader))
         self.logger.info("Loss Criterion: %s", self.criterion)
         self.logger.info("Optimizer: %s", self.optimizer)
 
@@ -157,8 +157,7 @@ class ClassificationAgent(BaseAgent):
             train_res = self.run_epoch_pass(self.train_loader, epoch=epoch)
             epoch_data.update(train_res)
             with torch.no_grad():
-                val_res = self.run_epoch_pass(
-                    self.val_loader, epoch=epoch, train=False)
+                val_res = self.run_epoch_pass(self.val_loader, epoch=epoch, train=False)
             epoch_data.update(val_res)
             self.scheduler.step()
             self.tb_sw.add_scalars("Epoch", epoch_data, global_step=epoch)
@@ -174,8 +173,7 @@ class ClassificationAgent(BaseAgent):
                     "best_acc1": self.best_acc1,
                 },
                 is_best,
-                filename=os.path.join(
-                    self.config["chkpt_dir"], self.checkpoint),
+                filename=os.path.join(self.config["chkpt_dir"], self.checkpoint),
                 best_filename=os.path.join(
                     self.config["chkpt_dir"], self.best_checkpoint
                 ),
@@ -219,15 +217,24 @@ class ClassificationAgent(BaseAgent):
                 if train:
                     # compute the gradient and to an optimizer step
                     self.optimizer.zero_grad()
-                    loss.backward()
+                    if self.use_amp:
+                        with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                            scaled_loss.backward()
+                    else:
+                        loss.backward()
                     self.optimizer.step()
 
                 # measure the accuracy and record the loss
                 bs = outputs.size(0)
                 losses.update(loss.item(), bs)
 
-                (auroc, auprc, acc, f_measure, f_beta, g_beta) = self.calculate_evaluation(
-                    outputs.detach(), target.detach())
+                (
+                    (scaled_prediction, target_ground_truths),
+                    (auroc, auprc, acc, f_measure, f_beta, g_beta),
+                ) = self.calculate_evaluation(
+                    outputs.detach(), target.detach(), tag=tag
+                )
+
                 acc_meter.update(acc, bs)
                 auroc_meter.update(auroc, bs)
                 auprc_meter.update(auprc, bs)
@@ -239,15 +246,27 @@ class ClassificationAgent(BaseAgent):
                 batch_time.update(time() - end)
 
                 # logging
-                self.log_post_batch(step, t, losses, tag, acc_meter, auroc_meter,
-                                    auprc_meter, f_measure_meter, f_beta_meter, g_beta_meter)
+                self.log_post_batch(
+                    step,
+                    t,
+                    losses,
+                    tag,
+                    scaled_prediction,
+                    target_ground_truths,
+                    acc_meter,
+                    auroc_meter,
+                    auprc_meter,
+                    f_measure_meter,
+                    f_beta_meter,
+                    g_beta_meter,
+                )
 
                 end = time()
 
         self.logger.info(
             "{} Epoch {}/{} ".format(tag, epoch, self.epochs)
             + "Loss {:.4f} ({:.4f}) | ".format(losses.val, losses.avg,)
-            + "Top1 {:.1f} ({:.1f})".format(acc_meter.val, acc_meter.avg,)
+            + "Top1 {:.3f} ({:.3f})".format(acc_meter.val, acc_meter.avg,)
         )
 
         return {
@@ -255,12 +274,26 @@ class ClassificationAgent(BaseAgent):
             f"{tag}_acc": acc_meter.avg,
         }
 
-    def log_post_batch(self, step, t, losses, tag, acc_meter, auroc_meter, auprc_meter, f_measure_meter, f_beta_meter, g_beta_meter):
+    def log_post_batch(
+        self,
+        step,
+        t,
+        losses,
+        tag,
+        scaled_prediction,
+        target_ground_truths,
+        acc_meter,
+        auroc_meter,
+        auprc_meter,
+        f_measure_meter,
+        f_beta_meter,
+        g_beta_meter,
+    ):
         # batch has just finished, log the necessary values
         if step % self.log_per_num_batch == 0:
             t.set_postfix_str(
                 "Loss {:.4f} ({:.4f}) | ".format(losses.val, losses.avg,)
-                + "Acc {:.1f} ({:.1f})".format(acc_meter.val, acc_meter.avg,)
+                + "Acc {:.3f} ({:.3f})".format(acc_meter.val, acc_meter.avg,)
             )
             tag_scalar_dict = {
                 "loss": losses.val,  # "loss_avg": losses.avg,
@@ -274,9 +307,11 @@ class ClassificationAgent(BaseAgent):
                 # "batch_time": batch_time.val,  # "batch_time_avg": batch_time.avg
             }
             self.tb_sw.add_scalars(tag, tag_scalar_dict, global_step=step)
+            self.tb_sw.add_pr_curve(
+                tag, target_ground_truths, scaled_prediction, global_step=step
+            )
 
-    @staticmethod
-    def calculate_evaluation(predictions, targets, threshold=0.9):
+    def calculate_evaluation(self, predictions, targets, threshold=0.9, tag="Train"):
         scaler = MinMaxScaler()
         scaled_prediction = scaler.fit_transform(predictions.cpu().T).T
         output_predictions = scaled_prediction >= threshold
@@ -284,7 +319,12 @@ class ClassificationAgent(BaseAgent):
         target_ground_truths = targets.cpu().numpy() > 0
 
         acc, f_measure, f_beta, g_beta = compute_beta_score(
-            target_ground_truths, output_predictions)
+            target_ground_truths, output_predictions
+        )
         auroc, auprc = compute_auc(target_ground_truths, scaled_prediction)
 
-        return (auroc, auprc, acc, f_measure, f_beta, g_beta)
+        return (
+            (scaled_prediction, target_ground_truths),
+            (auroc, auprc, acc, f_measure, f_beta, g_beta),
+        )
+
