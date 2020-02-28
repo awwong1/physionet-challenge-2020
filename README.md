@@ -39,6 +39,9 @@ python3 driver.py Training_WFDB out
 
 # Evaluate the classifier scores
 python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out
+
+# Sanity tests
+python3 -m unittest discover
 ```
 
 ## Contents
