@@ -1,4 +1,45 @@
-# Example Python classifier for the PhysioNet/CinC Challenge 2020
+# Python Classifier Submission for PhysioNet/CinC Challenge 2020
+
+Source code for the [PhysioNet/CinC Challenge 2020](https://physionetchallenges.github.io/2020/). Extends the [Python Classifier Template](https://github.com/physionetchallenges/python-classifier-2020).
+
+## Team Details
+
+Team name: **CVC**
+
+- Alexander William Wong <[alex.wong@ualberta.ca](mailto:alex.wong@ualberta.ca)>
+    - University of Alberta
+- Weijie Sun <[weijie2@ualberta.ca](mailto:weijie2@ualberta.ca)>
+    - Canadian Vigour Centre
+- Sunil Kalmady Vasu <[kalmady@ualberta.ca](mailto:kalmady@ualberta.ca)>
+    - Canadian Vigour Centre
+- Padma Kaul <[pkaul@ualberta.ca](mailto:pkaul@ualberta.ca)>
+    - Canadian Vigour Centre
+- Abram Hindle <[abram.hindle@ualberta.ca](mailto:abram.hindle@ualberta.ca)>
+    - University of Alberta
+
+## Quickstart
+
+```bash
+# Retrieve the evaluation code
+git submodule update
+
+# Download and extract the dataset
+wget https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/PhysioNetChallenge2020_Training_CPSC.tar.gz
+md5sum --check MD5SUMS
+# PhysioNetChallenge2020_Training_CPSC.tar.gz: OK
+tar -xvf PhysioNetChallenge2020_Training_CPSC.tar.gz
+
+# Initialize a Python Virtual Environment (venv/pip)
+virtualenv venv --python python3
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Run the classifier
+python3 driver.py Training_WFDB out
+
+# Evaluate the classifier scores
+python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out
+```
 
 ## Contents
 
