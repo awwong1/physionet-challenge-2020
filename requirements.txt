@@ -4,3 +4,8 @@ joblib==0.13.2
 Cython==0.29.13
 pandas==0.25.3
 scikit-learn==0.21.3
+wfdb==2.2.1
+torch==1.4.0
+tensorboard==2.1.0
+torchvision==0.5.0
+tqdm==4.43.0
