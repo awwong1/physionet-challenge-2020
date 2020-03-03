@@ -31,9 +31,8 @@ class SimpleCNN(nn.Module):
 
     def forward(self, batch):
         x = batch["signal"]
-        # x is in shape (seq, batch, features)
+        # x is in shape (batch, seq, features)
         # need to convert into (batch, features, seq)
-        x = torch.transpose(x, 0, 1)
         x = torch.transpose(x, 1, 2)
         output = self.features(x)
         output = self.fc(output)

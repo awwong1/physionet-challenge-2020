@@ -12,7 +12,7 @@
   },
   "val_split": 0.1,
   "train_loader": {
-      "batch_size": 16,
+      "batch_size": 128,
       "num_workers": 0,
       "shuffle": true,
       "pin_memory": true

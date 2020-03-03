@@ -74,11 +74,15 @@ class ClassificationAgent(BaseAgent):
         self.train_set = init_class(config.get("dataset"), records=train_records)
         self.val_set = init_class(config.get("dataset"), records=val_records)
 
+        collate_fn = None
+        if config.get("use_collate_fn", False):
+            collate_fn = PhysioNet2020Dataset.collate_fn
+
         self.train_loader = torch.utils.data.DataLoader(
-            self.train_set, **config.get("train_loader"), collate_fn=PhysioNet2020Dataset.collate_fn
+            self.train_set, **config.get("train_loader"), collate_fn=collate_fn
         )
         self.val_loader = torch.utils.data.DataLoader(
-            self.val_set, **config.get("val_loader"), collate_fn=PhysioNet2020Dataset.collate_fn
+            self.val_set, **config.get("val_loader"), collate_fn=collate_fn
         )
 
         # Initialize the neural network model architecture
