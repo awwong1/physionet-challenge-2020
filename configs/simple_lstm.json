@@ -23,7 +23,7 @@
       "pin_memory": true
   },
   "model": {
-    "name": "models.simple_cnn.SimpleLSTM"
+    "name": "models.simple_lstm.SimpleLSTM"
   },
   "criterion": {
     "name": "torch.nn.BCEWithLogitsLoss"
