@@ -6,6 +6,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 class SimpleLSTM(nn.Module):
     """Simple recurrent neural network classifier using LSTM.
     Supports variable length sequences.
+
+    This module is incompatible with multi GPU training due to forward pass logic.
     """
 
     def __init__(
