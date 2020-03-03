@@ -8,8 +8,8 @@ import torch
 
 from models.simple_cnn import SimpleCNN
 
-# FP = "experiments/PhysioNet2020/SimpleCNN/checkpoints/model_best.pth.tar"
-FP = "model_best.pth.tar"
+FP = "experiments/PhysioNet2020/SimpleCNN/checkpoints/model_best.pth.tar"
+# FP = "model_best.pth.tar"
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 THRESHOLD = 0.9
 
