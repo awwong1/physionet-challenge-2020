@@ -101,6 +101,13 @@ class ClassificationAgent(BaseAgent):
         # Initialize task loss criterion, optimizer, scheduler
         self.criterion = init_class(config.get("criterion"))
         self.optimizer = init_class(config.get("optimizer"), self.model.parameters())
+
+        if self.use_cuda:
+            if self.use_amp:
+                amp.initialize(self.model, self.optimizer, opt_level=self.amp_opt_level)
+            if len(self.gpu_ids) > 1:
+                self.model = torch.nn.DataParallel(self.model)
+
         sched_config = config.get("scheduler")
         if sched_config:
             self.logger.info("Scheduler: %s", pformat(sched_config))
@@ -110,12 +117,6 @@ class ClassificationAgent(BaseAgent):
             self.scheduler = torch.optim.lr_scheduler.StepLR(
                 self.optimizer, step_size=1, gamma=1
             )
-
-        if self.use_cuda:
-            if self.use_amp:
-                amp.initialize(self.model, self.optimizer, opt_level=self.amp_opt_level)
-            if len(self.gpu_ids) > 1:
-                self.model = torch.nn.DataParallel(self.model)
 
         # number of epochs to run
         self.epochs = config.get("epochs", 123)
