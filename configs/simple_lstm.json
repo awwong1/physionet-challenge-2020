@@ -34,13 +34,6 @@
       "lr": 0.01
     }
   },
-  "scheduler": {
-    "name": "torch.optim.lr_scheduler.StepLR",
-    "kwargs": {
-      "step_size": 18,
-      "gamma": 0.1
-    }
-  },
   "epochs": 30,
   "log_per_num_batch": 1,
   "use_amp": true,
