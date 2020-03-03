@@ -50,8 +50,10 @@ python3 -m unittest discover
 
 ```bash
 docker build -t sanity .
-docker run sanity:latest python3 driver.py Training_WFDB out
-docker run -it -v Training_WFDB:/physionet/input_directory -v output_directory:/physionet/output_directory sanity bash
+docker run -it \
+    -v /path/to/Training_WFDB:/physionet/input_directory \
+    -v /path/to/output_directory:/physionet/output_directory \
+    sanity bash
 
 # within Docker context
 python3 driver.py input_directory output_directory

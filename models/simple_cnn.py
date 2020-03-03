@@ -29,7 +29,8 @@ class SimpleCNN(nn.Module):
 
         self.fc = nn.Linear(128, num_classes)
 
-    def forward(self, x):
+    def forward(self, batch):
+        x = batch["signal"]
         # because x is in shape (B, L, C), need to convert into (B, C, L)
         output = self.features(torch.transpose(x, 1, 2))
         output = self.fc(output)

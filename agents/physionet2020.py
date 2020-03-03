@@ -221,16 +221,13 @@ class ClassificationAgent(BaseAgent):
                 # measure data loading time
                 data_time.update(time() - end)
 
-                signal = batch["signal"]
-                target = batch["target"]
-
                 if self.use_cuda:
-                    signal = signal.cuda(non_blocking=True)
-                    target = target.cuda(non_blocking=True)
+                    batch["signal"] = batch["signal"].cuda(non_blocking=True)
+                    batch["target"] = batch["target"].cuda(non_blocking=True)
 
                 # compute prediction
-                outputs = self.model(signal)
-                loss = self.criterion(outputs, target)
+                outputs = self.model(batch)
+                loss = self.criterion(outputs, batch["target"])
 
                 if train:
                     # compute the gradient and to an optimizer step
@@ -250,7 +247,7 @@ class ClassificationAgent(BaseAgent):
                     (scaled_prediction, target_ground_truths),
                     (auroc, auprc, acc, f_measure, f_beta, g_beta),
                 ) = self.calculate_evaluation(
-                    outputs.detach(), target.detach(), tag=tag
+                    outputs.detach(), batch["target"].detach(), tag=tag
                 )
 
                 acc_meter.update(acc, bs)
