@@ -111,10 +111,11 @@ class ClassificationAgent(BaseAgent):
                 self.optimizer, step_size=1, gamma=1
             )
 
-        if self.use_cuda and len(self.gpu_ids) > 1:
+        if self.use_cuda:
             if self.use_amp:
                 amp.initialize(self.model, self.optimizer, opt_level=self.amp_opt_level)
-            self.model = torch.nn.DataParallel(self.model)
+            if len(self.gpu_ids) > 1:
+                self.model = torch.nn.DataParallel(self.model)
 
         # number of epochs to run
         self.epochs = config.get("epochs", 123)
