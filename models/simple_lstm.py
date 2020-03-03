@@ -37,17 +37,16 @@ class SimpleLSTM(nn.Module):
 
     def forward(self, batch):
         x = batch["signal"]  # (seq, batch, feature)
-        total_length = x.size(0)
         batch_size = x.size(1)
         lens = batch["len"]
         packed_x = pack_padded_sequence(x, lens, enforce_sorted=False)
 
         packed_out, _ = self.lstm1(packed_x)
-        padded_out, _ = pad_packed_sequence(packed_out, total_length=total_length)
+        padded_out, _ = pad_packed_sequence(packed_out, total_length=x.size(0))
 
         # separate out the forward/backward if required
         seq_batch_dir_hidden = padded_out.view(
-            total_length, batch_size, self.num_directions, self.hidden_size
+            x.size(0), batch_size, self.num_directions, self.hidden_size
         )
 
         # forward is 0, backward is 1
