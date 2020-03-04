@@ -34,7 +34,7 @@ tar -xvf PhysioNetChallenge2020_Training_CPSC.tar.gz
 virtualenv venv --python python3
 source venv/bin/activate
 pip install -r requirements.txt
-pip install ./apex/
+pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./apex/
 
 # Run the classifier
 python3 driver.py Training_WFDB out

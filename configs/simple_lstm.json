@@ -29,7 +29,7 @@
     "name": "torch.nn.BCEWithLogitsLoss"
   },
   "optimizer": {
-    "name": "torch.optim.Adam",
+    "name": "apex.optimizers.FusedAdam",
     "kwargs": {
       "lr": 0.01
     }
