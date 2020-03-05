@@ -21,8 +21,7 @@ Team name: **CVC**
 
 ```bash
 # Retrieve the required git submodules
-git submodule update --init evaluation-2020/
-git submodule update --init apex/
+git submodule update --init --recursive
 
 # Download and extract the dataset
 wget https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/PhysioNetChallenge2020_Training_CPSC.tar.gz
@@ -34,7 +33,11 @@ tar -xvf PhysioNetChallenge2020_Training_CPSC.tar.gz
 virtualenv venv --python python3
 source venv/bin/activate
 pip install -r requirements.txt
+
+# to use the NVIDIA/apex fused kernels and optimizers
 pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./apex/
+# for CPU only and non-apex environments
+pip install ./apex/
 
 # Run the classifier
 python3 driver.py Training_WFDB out
