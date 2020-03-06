@@ -117,7 +117,7 @@ def main():
     print("Extracting 12ECG features...")
     num_files = len(input_files)
 
-    with tqdm(enumerate(input_files), desc="Evaluating...") as t:
+    with tqdm(enumerate(input_files), desc="Evaluating...", total=num_files) as t:
         for i, f in t:
             tmp_input_file = os.path.join(input_directory, f)
             data, header_data = load_challenge_data(tmp_input_file)

@@ -10,7 +10,7 @@ do
         --override "{\
             \"exp_name\": \"PhysioNet2020/SimpleCNN/cv5-${i}\", \
             \"cross_validation\": {\"val_offset\": ${i}}, \
-            \"optimizer\": {\"name\": \"apex.optimizers.FusedAdam\"}
+            \"optimizer\": {\"name\": \"apex.optimizers.FusedAdam\"} \
         }"
 done
 
@@ -22,7 +22,12 @@ do
         --input Training_WFDB \
         --output out
 
-    echo "SimpleCNN/cv5-${i} results:"
+    python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out SimpleCNN.cv5-${i}.out
+done
 
-    python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out
+for i in {0..4}
+do
+    echo "SimpleCNN/cv5-${i} results:"
+    cat SimpleCNN.cv5-${i}.out
+    echo
 done
