@@ -1,5 +1,11 @@
 SimpleCNN configurations here use 5-fold cross validation.
 
+```bash
+# make sure that main.py is in the current working directory
+
+./configs/simple_cnn/run_cv5.sh  # this assumes NVIDIA/apex is installed
+```
+
 ```python
 t_rec, v_rec = PhysioNet2020Dataset.split_names_cv("Training_WFDB", 5, 0)
 # t_rec == ("A1377", ..., "A6877")

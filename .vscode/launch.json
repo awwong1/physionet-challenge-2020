@@ -9,7 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args": ["configs/debug_simple_cnn.json"],
+            "args": ["configs/simple_cnn/debug_simple_cnn.json"],
             "console": "integratedTerminal"
         },
         {
