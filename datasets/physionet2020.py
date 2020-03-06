@@ -86,9 +86,7 @@ class PhysioNet2020Dataset(Dataset):
         # construt the dataset length references
         if self.proc <= 0:
             self.record_len_fs = dict(
-                PhysioNet2020Dataset._get_sig_len_fs(
-                    os.path.join(self.data_dir, rn)
-                )
+                PhysioNet2020Dataset._get_sig_len_fs(os.path.join(self.data_dir, rn))
                 for rn in self.record_names
             )
         else:
@@ -174,11 +172,15 @@ class PhysioNet2020Dataset(Dataset):
     def split_names(data_dir, train_ratio):
         """Split all of the record names up into bins based on ratios
         """
-        record_names = [f[:-4] for f in os.listdir(data_dir) if (
-            os.path.isfile(os.path.join(data_dir, f))
-            and not f.lower().startswith(".")
-            and f.lower().endswith(".hea")
-        )]
+        record_names = [
+            f[:-4]
+            for f in os.listdir(data_dir)
+            if (
+                os.path.isfile(os.path.join(data_dir, f))
+                and not f.lower().startswith(".")
+                and f.lower().endswith(".hea")
+            )
+        ]
 
         total_records_len = len(record_names)
         train_records_len = int(total_records_len * train_ratio)
@@ -186,6 +188,39 @@ class PhysioNet2020Dataset(Dataset):
 
         train_records = tuple(random.sample(record_names, train_records_len))
         val_records = tuple(t for t in record_names if t not in train_records)
+
+        return train_records, val_records
+
+    @staticmethod
+    def split_names_cv(data_dir, fold=5, val_offset=0):
+        """Split the record names up into n-fold cross validation tuples
+        fold: (int) number of cross validation sets (>= 2)
+        val_offset: (int) current validation offset (0 < fold)
+        """
+        assert fold >= 2, f"fold must be greater than or equal to 2, got {fold}"
+        assert (
+            val_offset >= 0 and val_offset < fold
+        ), f"val_offset must be between [0, {fold}), got {val_offset}"
+        record_names = sorted(
+            [
+                f[:-4]
+                for f in os.listdir(data_dir)
+                if (
+                    os.path.isfile(os.path.join(data_dir, f))
+                    and not f.lower().startswith(".")
+                    and f.lower().endswith(".hea")
+                )
+            ]
+        )
+
+        total_records_len = len(record_names)
+        val_records_len = math.ceil(total_records_len / fold)
+
+        val_s_idx = val_offset * val_records_len
+        val_e_idx = val_s_idx + val_records_len
+
+        val_records = tuple(record_names[val_s_idx:val_e_idx])
+        train_records = tuple(t for t in record_names if not t in val_records)
 
         return train_records, val_records
 

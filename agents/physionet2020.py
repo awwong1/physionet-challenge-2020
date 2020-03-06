@@ -25,6 +25,7 @@ class ClassificationAgent(BaseAgent):
     - cpu_only (bool): if true, do not use cuda/CuDNN
     - dataset (dict): dataset configuration
     - val_split (float): ratio of dataset to split for validation
+    - cross_validation (dict): fold: int, val_offset: int
     - train_loader (dict): training dataloader
     - val_loader (dict): validation dataloader
     - model (dict): model architecture
@@ -53,24 +54,52 @@ class ClassificationAgent(BaseAgent):
 
         # Setup CUDA
         self._setup_cuda(config)
-        self.use_amp = config.get("use_amp", False)
+        self.use_amp = self.use_cuda and config.get("use_amp", False)
         self.amp_opt_level = config.get("amp_opt_level", "O1")
 
         # Initialize dataset and dataloaders
         data_dir = config["dataset"]["kwargs"]["data_dir"]
+        cross_validation = config.get("cross_validation", None)
         val_split = config.get("val_split", 0)
-        train_records, val_records = PhysioNet2020Dataset.split_names(
-            data_dir, 1 - val_split
-        )
+
+        if cross_validation:
+            # spit records according to cross validation configuration
+            self.logger.info(
+                "From records in %s, using %d-fold cross validation, validation offset %d",
+                data_dir,
+                cross_validation["fold"],
+                cross_validation["val_offset"],
+            )
+            train_records, val_records = PhysioNet2020Dataset.split_names_cv(
+                data_dir, **cross_validation
+            )
+            self.logger.info(
+                "Training on %d records (%s, ..., %s)",
+                len(train_records),
+                train_records[0],
+                train_records[-1],
+            )
+            self.logger.info(
+                "Validating on %d records (%s, ..., %s)",
+                len(val_records),
+                val_records[0],
+                val_records[-1],
+            )
+        else:
+            # use the val_split value
+            train_records, val_records = PhysioNet2020Dataset.split_names(
+                data_dir, 1 - val_split
+            )
+            self.logger.info(
+                "From records in %s, using random split, training on %d records, validating on %d records",
+                data_dir,
+                len(train_records),
+                len(val_records),
+            )
+
         self.logger.debug("Training using records: %s", train_records)
         self.logger.debug("Validating using records: %s", val_records)
 
-        self.logger.info(
-            "From records in %s, training on %d records, validating on %d records",
-            data_dir,
-            len(train_records),
-            len(val_records),
-        )
         self.train_set = init_class(config.get("dataset"), records=train_records)
         self.val_set = init_class(config.get("dataset"), records=val_records)
 

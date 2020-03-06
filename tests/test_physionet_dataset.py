@@ -56,3 +56,34 @@ class PhysioNet2020DatasetTest(unittest.TestCase):
             self.assertEqual(batch["target"].shape, (9, 9))
             self.assertEqual(batch["signal"].shape, (4000, 9, 12))
         self.assertEqual(idx, 1948)
+
+    def test_split_names_cv(self):
+        train_records, val_records = PhysioNet2020Dataset.split_names_cv(
+            "Training_WFDB", 5, 0
+        )
+        self.assertEqual(len(train_records), 5501)
+        self.assertEqual(len(val_records), 1376)
+        self.assertEqual(train_records[0], "A1377")
+        self.assertEqual(train_records[-1], "A6877")
+        self.assertEqual(val_records[0], "A0001")
+        self.assertEqual(val_records[-1], "A1376")
+
+        train_records, val_records = PhysioNet2020Dataset.split_names_cv(
+            "Training_WFDB", 5, 1
+        )
+        self.assertEqual(len(train_records), 5501)
+        self.assertEqual(len(val_records), 1376)
+        self.assertEqual(train_records[0], "A0001")
+        self.assertEqual(train_records[-1], "A6877")
+        self.assertEqual(val_records[0], "A1377")
+        self.assertEqual(val_records[-1], "A2752")
+
+        train_records, val_records = PhysioNet2020Dataset.split_names_cv(
+            "Training_WFDB", 5, 4
+        )
+        self.assertEqual(len(train_records), 5504)
+        self.assertEqual(len(val_records), 1373)
+        self.assertEqual(train_records[0], "A0001")
+        self.assertEqual(train_records[-1], "A5504")
+        self.assertEqual(val_records[0], "A5505")
+        self.assertEqual(val_records[-1], "A6877")
