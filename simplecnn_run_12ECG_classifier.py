@@ -9,9 +9,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+from driver import get_classes, load_challenge_data, save_challenge_predictions
 from models.simple_cnn import SimpleCNN
-
-from .driver import get_classes
 
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 THRESHOLD = 0.9
@@ -112,7 +111,7 @@ def main():
 
     # Load model.
     print("Loading 12ECG model...")
-    model = load_12ECG_model()
+    model = load_12ECG_model(fp=args.checkpoint)
 
     # Iterate over files.
     print("Extracting 12ECG features...")
