@@ -9,7 +9,6 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from driver import get_classes, load_challenge_data, save_challenge_predictions
 from models.simple_cnn import SimpleCNN
 
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
@@ -80,6 +79,8 @@ def load_12ECG_model(
 
 # Classify using SimpleCNN model
 def main():
+    from driver import get_classes, load_challenge_data, save_challenge_predictions
+
     parser = ArgumentParser(
         "Run SimpleCNN 12ECG classifier", formatter_class=ArgumentDefaultsHelpFormatter
     )
