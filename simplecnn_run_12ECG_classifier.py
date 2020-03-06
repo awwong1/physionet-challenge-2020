@@ -2,16 +2,20 @@
 # Using the SimpleCNN model
 
 import math
+import os
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from models.simple_cnn import SimpleCNN
 
-FP = "experiments/PhysioNet2020/SimpleCNN/checkpoints/model_best.pth.tar"
-# FP = "model_best.pth.tar"
+from .driver import get_classes
+
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 THRESHOLD = 0.9
+
 
 def run_12ECG_classifier(data, header_data, classes, model):
     num_classes = len(classes)
@@ -50,7 +54,9 @@ def run_12ECG_classifier(data, header_data, classes, model):
     return current_label, current_score
 
 
-def load_12ECG_model():
+def load_12ECG_model(
+    fp="experiments/PhysioNet2020/SimpleCNN/checkpoints/model_best.pth.tar",
+):
     """
     Load the ECG model from disk
     """
@@ -60,9 +66,9 @@ def load_12ECG_model():
         model = model.cuda()
 
     try:
-        checkpoint = torch.load(FP)
+        checkpoint = torch.load(fp)
     except RuntimeError:
-        checkpoint = torch.load(FP, map_location=torch.device("cpu"))
+        checkpoint = torch.load(fp, map_location=torch.device("cpu"))
 
     sd = dict(
         (k.split("module.")[-1], v) for (k, v) in checkpoint["state_dict"].items()
@@ -71,3 +77,61 @@ def load_12ECG_model():
     model.load_state_dict(sd)
     model.eval()
     return model
+
+
+# Classify using SimpleCNN model
+def main():
+    parser = ArgumentParser(
+        "Run SimpleCNN 12ECG classifier", formatter_class=ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("checkpoint", help="Path to model checkpoint")
+    parser.add_argument(
+        "-i", "--input", default="Training_WFDB", help="Input directory"
+    )
+    parser.add_argument("-o", "--output", default="out", help="Output directory")
+
+    args = parser.parse_args()
+
+    input_directory = args.input
+    output_directory = args.output
+
+    # Find files.
+    input_files = []
+    for f in os.listdir(input_directory):
+        if (
+            os.path.isfile(os.path.join(input_directory, f))
+            and not f.lower().startswith(".")
+            and f.lower().endswith("mat")
+        ):
+            input_files.append(f)
+
+    if not os.path.isdir(output_directory):
+        os.mkdir(output_directory)
+
+    classes = get_classes(input_directory, input_files)
+
+    # Load model.
+    print("Loading 12ECG model...")
+    model = load_12ECG_model()
+
+    # Iterate over files.
+    print("Extracting 12ECG features...")
+    num_files = len(input_files)
+
+    with tqdm(enumerate(input_files), desc="Evaluating...") as t:
+        for i, f in t:
+            tmp_input_file = os.path.join(input_directory, f)
+            data, header_data = load_challenge_data(tmp_input_file)
+            current_label, current_score = run_12ECG_classifier(
+                data, header_data, classes, model
+            )
+            # Save results.
+            save_challenge_predictions(
+                output_directory, f, current_score, current_label, classes
+            )
+
+    print(f"Done. Saved to {output_directory}")
+
+
+if __name__ == "__main__":
+    main()

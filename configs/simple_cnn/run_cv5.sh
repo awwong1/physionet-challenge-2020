@@ -13,3 +13,16 @@ do
             \"optimizer\": {\"name\": \"apex.optimizers.FusedAdam\"}
         }"
 done
+
+# Evaluate on the Training_WFDB folder after training
+for i in {0..4}
+do
+    python3 simplecnn_run_12ECG_classifier.py \
+        experiments/PhysioNet2020/SimpleCNN/cv5-${i}/checkpoints/model_best.pth.tar \
+        --input Training_WFDB \
+        --output out
+
+    echo "SimpleCNN/cv5-${i} results:"
+
+    python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out
+done
