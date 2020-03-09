@@ -260,13 +260,15 @@ class ClassificationAgent(BaseAgent):
                     batch["signal"] = batch["signal"].cuda(non_blocking=True)
                     batch["target"] = batch["target"].cuda(non_blocking=True)
 
+                if train:
+                    # compute the gradient and to an optimizer step
+                    self.optimizer.zero_grad()
+
                 # compute prediction
                 outputs = self.model(batch)
                 loss = self.criterion(outputs, batch["target"])
 
                 if train:
-                    # compute the gradient and to an optimizer step
-                    self.optimizer.zero_grad()
                     if self.use_amp:
                         with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                             scaled_loss.backward()
