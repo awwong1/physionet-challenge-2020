@@ -26,7 +26,7 @@
       "pin_memory": true
   },
   "model": {
-    "name": "models.feature_cnn_lstm.FeatureCNN"
+    "name": "models.feature_cnn.FeatureCNN"
   },
   "criterion": {
     "name": "torch.nn.BCEWithLogitsLoss"

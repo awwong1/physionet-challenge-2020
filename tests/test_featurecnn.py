@@ -3,7 +3,7 @@ import unittest
 
 from torch.utils.data import DataLoader
 from datasets import PhysioNet2020Dataset
-from models.feature_cnn_lstm import FeatureCNN
+from models.feature_cnn import FeatureCNN
 
 
 class SimpleCNNTest(unittest.TestCase):
