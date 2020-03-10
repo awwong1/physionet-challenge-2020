@@ -8,6 +8,7 @@
       "max_seq_len": 4000
     }
   },
+  "dp_batch_dim": 1,
   "val_split": 0.1,
   "use_collate_fn": true,
   "train_loader": {

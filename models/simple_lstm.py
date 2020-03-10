@@ -40,7 +40,7 @@ class SimpleLSTM(nn.Module):
     def forward(self, batch):
         x = batch["signal"]  # (seq, batch, feature)
         batch_size = x.size(1)
-        lens = batch["len"]
+        lens = batch["signal_len"]
         packed_x = pack_padded_sequence(x, lens, enforce_sorted=False)
 
         packed_out, _ = self.lstm1(packed_x)

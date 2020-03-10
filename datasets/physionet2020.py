@@ -173,28 +173,34 @@ class PhysioNet2020Dataset(Dataset):
 
         data = {
             "signal": sig,
+            "signal_len": torch.tensor(len(sig)),
             "target": target,
             "sex": sex,
             "age": age,
-            "len": (len(sig),),
         }
 
         if self.derive_fft:
-            data["fft"] = PhysioNet2020Dataset.derive_fft_from_signal(sig, fs=r.fs)
+            fft, fft_len = PhysioNet2020Dataset.derive_fft_from_signal(sig, fs=r.fs)
+            data["fft"] = fft
+            data["fft_len"] = fft_len
 
         return data
 
     @staticmethod
-    def derive_fft_from_signal(sig, fs=500, rescale_0_1=True):
+    def derive_fft_from_signal(sig, fs=500, window="hann", truncate=7, rescale_0_1=True):
         """Signal is PyTorch Tensor in shape (seq_len, 12). For each of the 12 leads, perform FFT.
+        window: scipy windowing function to use
+        truncate: keep [0:len(sig)//truncate] bins. only valid if greater than or equal to 2!
+        rescale_0_1: if true, rescale outputs to be in range 0-1
         """
         seq_len, num_leads = sig.shape
-        fft = np.empty(shape=(seq_len // 2, num_leads))
+        fft = np.empty(shape=(seq_len // truncate, num_leads))
         for lead_idx in range(num_leads):
             lead_sig = sig.detach().cpu()[:, lead_idx].numpy()
 
             # Window the signal
-            window_sig = scipy.signal.hann(len(lead_sig)) * lead_sig
+            w = scipy.signal.windows.get_window(window, len(lead_sig))
+            window_sig = w * lead_sig
 
             # Apply FFT on windowed signal
             x = scipy.fft(window_sig)
@@ -206,14 +212,14 @@ class PhysioNet2020Dataset(Dataset):
             # plt.xlabel("Frequency (Hz)")
             # plt.show()
 
-            fft[:, lead_idx] = x_mag[: (len(x_mag) // 2)]
+            fft[:, lead_idx] = x_mag[: (len(x_mag) // truncate)]
 
         if rescale_0_1:
             # transform all values to fit between [0,1]
             scaler = MinMaxScaler()
             fft = scaler.fit_transform(fft)
 
-        return torch.FloatTensor(fft)
+        return torch.FloatTensor(fft), torch.tensor(seq_len // truncate)
 
     @staticmethod
     def split_names(data_dir, train_ratio):
@@ -287,14 +293,15 @@ class PhysioNet2020Dataset(Dataset):
 
         data = {
             "signal": sig,
+            "signal_len": torch.tensor(signal_lens),
             "target": target,
             "sex": sex,
             "age": age,
-            "len": signal_lens,
         }
 
         if all("fft" in e for e in batch):
             ffts = tuple(e["fft"] for e in batch)
             data["fft"] = pad_sequence(ffts, padding_value=pad)
+            data["fft_len"] = torch.tensor(tuple(e["fft_len"] for e in batch))
 
         return data

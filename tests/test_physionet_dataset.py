@@ -31,7 +31,7 @@ class PhysioNet2020DatasetTest(unittest.TestCase):
         )
         for idx, batch in enumerate(dl):
             self.assertEqual(
-                list(batch.keys()), ["signal", "target", "sex", "age", "len"]
+                list(batch.keys()), ["signal", "signal_len", "target", "sex", "age"]
             )
             self.assertEqual(batch["target"].shape, (23, 9))
             self.assertGreaterEqual(batch["signal"].size(0), 100)
@@ -55,7 +55,7 @@ class PhysioNet2020DatasetTest(unittest.TestCase):
         )
         for idx, batch in enumerate(dl):
             self.assertEqual(
-                list(batch.keys()), ["signal", "target", "sex", "age", "len"]
+                list(batch.keys()), ["signal", "signal_len", "target", "sex", "age"]
             )
             self.assertEqual(batch["target"].shape, (9, 9))
             self.assertEqual(batch["signal"].shape, (4000, 9, 12))
@@ -101,5 +101,6 @@ class PhysioNet2020DatasetTest(unittest.TestCase):
             proc=0,
         )
 
-        fft = PhysioNet2020Dataset.derive_fft_from_signal(ds[0]["signal"])
-        self.assertEqual(fft.shape, (2000, 12))
+        fft, fft_len = PhysioNet2020Dataset.derive_fft_from_signal(ds[0]["signal"])
+        self.assertEqual(fft.shape, (571, 12))
+        self.assertEqual(fft_len, 571)
