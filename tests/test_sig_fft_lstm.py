@@ -26,6 +26,7 @@ class SignalFourierTransformLSTMTest(unittest.TestCase):
         )
 
         batch = next(iter(dl))
+        self.assertEqual(batch["signal"].shape, (4000, 8, 12))
         out = m(batch)
 
         self.assertEqual(out.shape, (8, 9))

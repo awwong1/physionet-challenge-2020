@@ -12,13 +12,13 @@
   "val_split": 0.1,
   "use_collate_fn": true,
   "train_loader": {
-      "batch_size": 128,
+      "batch_size": 8,
       "num_workers": 16,
       "shuffle": true,
       "pin_memory": true
   },
   "val_loader": {
-      "batch_size": 64,
+      "batch_size": 16,
       "num_workers": 16,
       "shuffle": false,
       "pin_memory": true
@@ -30,7 +30,7 @@
     "name": "torch.nn.BCEWithLogitsLoss"
   },
   "optimizer": {
-    "name": "apex.optimizers.FusedAdam",
+    "name": "torch.optim.Adam",
     "kwargs": {
       "lr": 0.01
     }
