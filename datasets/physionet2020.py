@@ -6,11 +6,16 @@ import random
 import re
 from multiprocessing import Pool
 
+import numpy as np
+import scipy
 import torch
 import wfdb
 from scipy import signal
+from sklearn.preprocessing import MinMaxScaler
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
+
+from util.config import init_class
 
 __all__ = ["PhysioNet2020Dataset"]
 
@@ -31,6 +36,7 @@ class PhysioNet2020Dataset(Dataset):
         ensure_equal_len=False,
         proc=None,
         records=None,
+        derive_fft=False,
     ):
         """Initialize the PhysioNet 2020 Challenge Dataset
         data_dir: path to *.mat and *.hea files
@@ -39,6 +45,7 @@ class PhysioNet2020Dataset(Dataset):
         ensure_equal_len: if True, set all signal lengths equal to ensure_equal_len
         proc: Number of processes for generating dataset length references (0: single threaded)
         records: only use provided record names (default: use all available records)
+        derive_fft: include "fft" in signal features dictionary
         """
         super(PhysioNet2020Dataset, self).__init__()
 
@@ -53,6 +60,7 @@ class PhysioNet2020Dataset(Dataset):
         self.max_seq_len = max_seq_len
         self.proc = proc
         self.ensure_equal_len = ensure_equal_len
+        self.derive_fft = derive_fft
 
         if ensure_equal_len:
             assert (
@@ -160,13 +168,49 @@ class PhysioNet2020Dataset(Dataset):
         sex[PhysioNet2020Dataset.SEX.index(sx_grp.group("sx"))] = 1.0
         sex = torch.ByteTensor(sex)
 
-        return {
+        data = {
             "signal": sig,
             "target": target,
             "sex": sex,
             "age": age,
             "len": (len(sig),),
         }
+
+        if self.derive_fft:
+            data["fft"] = PhysioNet2020Dataset.derive_fft_from_signal(sig, fs=r.fs)
+
+        return data
+
+    @staticmethod
+    def derive_fft_from_signal(sig, fs=500, rescale_0_1=True):
+        """Signal is PyTorch Tensor in shape (seq_len, 12). For each of the 12 leads, perform FFT.
+        """
+        seq_len, num_leads = sig.shape
+        fft = np.empty(shape=(seq_len // 2, num_leads))
+        for lead_idx in range(num_leads):
+            lead_sig = sig.detach().cpu()[:, lead_idx].numpy()
+
+            # Window the signal
+            window_sig = scipy.signal.hann(len(lead_sig)) * lead_sig
+
+            # Apply FFT on windowed signal
+            x = scipy.fft(window_sig)
+            x_mag = scipy.absolute(x)
+            f = np.linspace(0, fs, len(x_mag))  # unused, but when plotted will show only 0.5 fs bins valid
+            # Only half of the bins are usable, discard the other half
+            # plt.figure(figsize=(13, 5))
+            # plt.plot(f[:len(f)//2], X_mag[:len(X_mag)//2])
+            # plt.xlabel("Frequency (Hz)")
+            # plt.show()
+
+            fft[:, lead_idx] = x_mag[: (len(x_mag) // 2)]
+
+        if rescale_0_1:
+            # transform all values to fit between [0,1]
+            scaler = MinMaxScaler()
+            fft = scaler.fit_transform(fft)
+
+        return torch.FloatTensor(fft)
 
     @staticmethod
     def split_names(data_dir, train_ratio):
@@ -238,10 +282,16 @@ class PhysioNet2020Dataset(Dataset):
         signal_lens = tuple(len(e) for e in signals)
         sig = pad_sequence(signals, padding_value=pad)
 
-        return {
+        data = {
             "signal": sig,
             "target": target,
             "sex": sex,
             "age": age,
             "len": signal_lens,
         }
+
+        if all("fft" in e for e in batch):
+            ffts = tuple(e["fft"] for e in bath)
+            data["fft"] = pad_sequence(ffts, padding_value=pad)
+
+        return data
