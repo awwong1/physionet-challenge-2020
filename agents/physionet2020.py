@@ -199,7 +199,7 @@ class ClassificationAgent(BaseAgent):
             epoch_data = dict(
                 [
                     ("lr_{}".format(idx), lr)
-                    for (idx, lr) in enumerate(self.scheduler.get_lr())
+                    for (idx, lr) in enumerate(self.scheduler.get_last_lr())
                 ]
             )
             train_res = self.run_epoch_pass(self.train_loader, epoch=epoch)
