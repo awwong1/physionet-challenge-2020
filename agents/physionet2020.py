@@ -196,12 +196,14 @@ class ClassificationAgent(BaseAgent):
                 self.run_epoch_pass(self.val_loader, epoch=0, train=False)
 
         for epoch in range(self.epoch, self.epochs):
-            epoch_data = dict(
-                [
-                    ("lr_{}".format(idx), lr)
-                    for (idx, lr) in enumerate(self.scheduler.get_last_lr())
-                ]
-            )
+            if len(self.optimizer.param_groups) == 1:
+                lr = self.optimizer.param_groups[0].get("lr")
+                epoch_data = {"lr": lr}
+            else:
+                epoch_data = dict((
+                    ("lr_grp_{}".format(idx), pg.get("lr", float("NaN")))
+                    for (idx, pg) in enumerate(self.optimizer.param_groups)
+                ))
             train_res = self.run_epoch_pass(self.train_loader, epoch=epoch)
             epoch_data.update(train_res)
             with torch.no_grad():
