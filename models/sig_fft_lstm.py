@@ -48,6 +48,8 @@ class SignalFourierTransformLSTM(nn.Module):
         fft = batch["fft"]
         sig_lens = batch["len"]
 
+        if len(sig_lens) == 1 and type(sig_lens) == list:
+            sig_lens = sig_lens[0]
         lstm_sig_in = pack_padded_sequence(sig, sig_lens, enforce_sorted=False)
         _, (sig_hidden, _) = self.lstm_sig(lstm_sig_in)
         # out, lens = pad_packed_sequence(packed_out)
