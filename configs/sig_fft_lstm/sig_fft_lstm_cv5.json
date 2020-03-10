@@ -34,7 +34,7 @@
     "name": "torch.nn.BCEWithLogitsLoss"
   },
   "optimizer": {
-    "name": "apex.optimizers.FusedAdam",
+    "name": "torch.optim.Adam",
     "kwargs": {
       "lr": 0.01
     }
@@ -49,6 +49,7 @@
   },
   "epochs": 30,
   "log_per_num_batch": 1,
-  "use_amp": true
+  "use_amp": true,
+  "gpu_ids": [0]
 }
 

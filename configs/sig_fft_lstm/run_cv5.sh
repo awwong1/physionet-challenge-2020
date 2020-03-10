@@ -6,7 +6,7 @@
 
 for i in {0..4}
 do
-    python3 main.py configs/simple_cnn/simple_cnn_cv5.json \
+    python3 main.py configs/sig_fft_lstm/sig_fft_lstm_cv5.json \
         --override "{\
             \"exp_name\": \"PhysioNet2020/SignalFourierTransformLSTM/cv5${i}\", \
             \"cross_validation\": {\"val_offset\": ${i}}, \
