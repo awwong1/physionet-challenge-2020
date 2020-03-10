@@ -266,6 +266,8 @@ class ClassificationAgent(BaseAgent):
                 if self.use_cuda:
                     batch["signal"] = batch["signal"].cuda(non_blocking=True)
                     batch["target"] = batch["target"].cuda(non_blocking=True)
+                    if "fft" in batch:
+                        batch["fft"] = batch["fft"].cuda(non_blocking=True)
 
                 if train:
                     # compute the gradient and to an optimizer step
