@@ -53,9 +53,7 @@ class SignalFourierTransformLSTM(nn.Module):
         _, (sig_hidden, _) = self.lstm_sig(lstm_sig_in)
         # out, lens = pad_packed_sequence(packed_out)
 
-        lstm_fft_in = pack_padded_sequence(
-            fft, fft_lens, enforce_sorted=False
-        )
+        lstm_fft_in = pack_padded_sequence(fft, fft_lens, enforce_sorted=False)
         _, (fft_hidden, _) = self.lstm_sig(lstm_fft_in)
 
         if self.bidirectional:

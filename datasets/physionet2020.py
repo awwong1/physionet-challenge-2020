@@ -219,7 +219,7 @@ class PhysioNet2020Dataset(Dataset):
             scaler = MinMaxScaler()
             fft = scaler.fit_transform(fft)
 
-        return torch.FloatTensor(fft), torch.tensor(seq_len // truncate)
+        return torch.FloatTensor(fft), torch.tensor(len(fft))
 
     @staticmethod
     def split_names(data_dir, train_ratio):
