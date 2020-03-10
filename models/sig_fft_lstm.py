@@ -4,6 +4,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 
 
 class SignalFourierTransformLSTM(nn.Module):
+    """Due to pack_padded_sequence, https://github.com/pytorch/pytorch/issues/31422
+    only training with one GPU is supported.
+    """
     def __init__(
         self,
         in_channels=12,
