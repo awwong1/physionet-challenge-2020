@@ -291,7 +291,7 @@ class PhysioNet2020Dataset(Dataset):
         }
 
         if all("fft" in e for e in batch):
-            ffts = tuple(e["fft"] for e in bath)
+            ffts = tuple(e["fft"] for e in batch)
             data["fft"] = pad_sequence(ffts, padding_value=pad)
 
         return data
