@@ -140,11 +140,14 @@ class PhysioNet2020Dataset(Dataset):
         else:
             start_idx = self.max_seq_len * rel_idx
             end_idx = min(len(sig), start_idx + self.max_seq_len)
+            if (end_idx - start_idx) < self.max_seq_len:
+                # rather than just truncating it, push the start_idx back
+                start_idx = max(0, end_idx - self.max_seq_len)
 
         # force shape matches ensure_equal_len if necessary
         if self.ensure_equal_len:
             # start to end must equal max_seq_len
-            sig = torch.FloatTensor(sig[end_idx - self.max_seq_len : end_idx])
+            sig = torch.FloatTensor(sig[max(0, end_idx - self.max_seq_len) : end_idx])
             if len(sig) < self.max_seq_len:
                 pad = self.max_seq_len - len(sig)
                 sig = torch.nn.functional.pad(sig, (0, 0, pad, 0), "constant", 0)

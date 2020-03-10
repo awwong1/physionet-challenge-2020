@@ -135,7 +135,8 @@ class ClassificationAgent(BaseAgent):
             if self.use_amp:
                 amp.initialize(self.model, self.optimizer, opt_level=self.amp_opt_level)
             if len(self.gpu_ids) > 1:
-                self.model = torch.nn.DataParallel(self.model)
+                dp_batch_dim = config.get("dp_batch_dim", 0)
+                self.model = torch.nn.DataParallel(self.model, dim=dp_batch_dim)
 
         sched_config = config.get("scheduler")
         if sched_config:
@@ -203,11 +204,15 @@ class ClassificationAgent(BaseAgent):
             )
             train_res = self.run_epoch_pass(self.train_loader, epoch=epoch)
             epoch_data.update(train_res)
-            self.scheduler.step()
             with torch.no_grad():
                 val_res = self.run_epoch_pass(self.val_loader, epoch=epoch, train=False)
             epoch_data.update(val_res)
             self.tb_sw.add_scalars("Epoch", epoch_data, global_step=epoch)
+
+            if type(self.scheduler) == torch.optim.lr_scheduler.ReduceLROnPlateau:
+                self.scheduler.step(val_res["Val_loss"])
+            else:
+                self.scheduler.step()
 
             is_best = val_res["Val_acc"] > self.best_acc1
             self.best_acc1 = max(val_res["Val_acc"], self.best_acc1)
