@@ -322,6 +322,11 @@ class ClassificationAgent(BaseAgent):
         return {
             f"{tag}_loss": losses.avg,
             f"{tag}_acc": acc_meter.avg,
+            # f"{tag}_auroc": auroc_meter.avg,
+            # f"{tag}_auprc": auprc_meter.avg,
+            # f"{tag}_f_measure": f_measure_meter.avg,
+            f"{tag}_f_beta": f_beta_meter.avg,
+            f"{tag}_g_beta": g_beta_meter.avg
         }
 
     def log_post_batch(
