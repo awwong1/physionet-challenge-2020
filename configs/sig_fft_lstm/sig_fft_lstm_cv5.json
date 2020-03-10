@@ -2,6 +2,7 @@
   "exp_name": "PhysioNet2020/SignalFourierTransformLSTM/cv5-0",
   "agent": "agents.physionet2020.ClassificationAgent",
   "dp_batch_dim": 1,
+  "use_collate_fn": true,
   "dataset": {
     "name": "datasets.physionet2020.PhysioNet2020Dataset",
     "kwargs": {
