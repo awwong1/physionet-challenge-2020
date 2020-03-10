@@ -1,7 +1,11 @@
 import os
 import unittest
 
+import numpy as np
+import torch
+from scipy import signal
 from torch.utils.data import DataLoader
+
 from datasets import PhysioNet2020Dataset
 
 
@@ -87,3 +91,15 @@ class PhysioNet2020DatasetTest(unittest.TestCase):
         self.assertEqual(train_records[-1], "A5504")
         self.assertEqual(val_records[0], "A5505")
         self.assertEqual(val_records[-1], "A6877")
+
+    def test_derive_fft_from_signal(self):
+        ds = PhysioNet2020Dataset(
+            "Training_WFDB",
+            max_seq_len=4000,
+            ensure_equal_len=True,
+            records=("A0001",),
+            proc=0,
+        )
+
+        fft = PhysioNet2020Dataset.derive_fft_from_signal(ds[0]["signal"])
+        self.assertEqual(fft.shape, (2000, 12))

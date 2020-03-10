@@ -70,6 +70,17 @@ exit
 | Baseline   | 0.506 | 0.128 | 0.831    | 0.046     | 0.071         | 0.029         |
 | [SimpleCNN](https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/experiments/PhysioNet2020/SimpleCNN.tar.gz) | 0.456 | 0.230 | 0.858    | 0.396     | 0.437         | 0.222         |
 
+## Jupyter Notebooks
+
+```bash
+# tqdm in notebook
+pip install ipywidgets
+jupyter nbextension enable --py widgetsnbextension --sys-prefix
+jupyter labextension install @jupyter-widgets/jupyterlab-manager
+jupyter lab clean
+jupyter lab build
+```
+
 
 ## Contents
 
