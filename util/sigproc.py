@@ -49,6 +49,7 @@ def extract_ecg_features(signal, sampling_rate=500):
     #
     # that threw a `ValueError: Not enough beats to compute heart rate`
     # Therefore, do a heuristic approach for vetting beat classification?
+    # Additional work done to speed up multi-lead analysis
     #
     # some bad files:
     # A0115.mat
@@ -56,12 +57,16 @@ def extract_ecg_features(signal, sampling_rate=500):
     # A3762.mat
 
     sampling_rate = float(sampling_rate)
-    _num_leads, length = signal.shape
+    num_leads, length = signal.shape
+
+    if num_leads > 12:
+        raise RuntimeError(f"Maximum of 12 leads supported, signal contains {num_leads}")
 
     # filter signal
     order = int(0.3 * sampling_rate)
-    filtered = tuple(
-        filter_signal(
+
+    def filter_map(sig):
+        return filter_signal(
             signal=sig,
             ftype="FIR",
             band="bandpass",
@@ -69,18 +74,72 @@ def extract_ecg_features(signal, sampling_rate=500):
             frequency=[3, 45],
             sampling_rate=sampling_rate,
         )["signal"]
-        for sig in signal
-    )
+
+    filtered = tuple(map(filter_map, signal))
 
     # segment
-    rpeaks = list(
-        hamilton_segmenter(signal=sig, sampling_rate=sampling_rate)["rpeaks"]
-        for sig in filtered
-    )
+    def segment_map(sig):
+        return hamilton_segmenter(signal=sig, sampling_rate=sampling_rate)["rpeaks"]
+
+    rpeaks = list(map(segment_map, filtered))
     rpeak_det = ["hamilton"] * len(rpeaks)
 
     # SANITY CHECK! If a a lead returns <2 peaks, it's an error!
     # try a different segmentation algorithm?
+    ensure_rpeaks_valid(rpeaks, length, filtered, sampling_rate, rpeak_det)
+
+    # correct R-peak locations
+    def correct_map(sig_rpeak):
+        sig, rpeak = sig_rpeak
+        return correct_rpeaks(
+            signal=sig, rpeaks=rpeak, sampling_rate=sampling_rate, tol=0.05
+        )["rpeaks"]
+
+    rpeaks = tuple(map(correct_map, zip(filtered, rpeaks)))
+
+    # extract templates
+    def extract_map(sig_rpeak):
+        sig, rpeak = sig_rpeak
+        return extract_heartbeats(
+            signal=sig,
+            rpeaks=rpeak,
+            sampling_rate=sampling_rate,
+            before=0.2,
+            after=0.4,
+        )
+
+    templates, rpeaks = zip(*(map(extract_map, zip(filtered, rpeaks))))
+
+    # compute heart rate over time
+    def hr_map(beats):
+        return get_heart_rate(
+            beats=beats, sampling_rate=sampling_rate, smooth=True, size=3
+        )
+
+    hr_idx, hr = zip(*(map(hr_map, rpeaks)))
+
+    # create time vectors
+    T = (length - 1) / sampling_rate
+    ts = np.linspace(0, T, length, endpoint=True)
+    ts_hr = tuple(ts[r] for r in hr_idx)
+    ts_tmpl = tuple(
+        np.linspace(-0.2, 0.4, t.shape[1], endpoint=False) for t in templates
+    )
+
+    features = {
+        "ts": ts,
+        "filtered": filtered,
+        "rpeak_det": rpeak_det,
+        "rpeaks": rpeaks,
+        "templates_ts": ts_tmpl,
+        "templates": templates,
+        "heart_rate_ts": ts_hr,
+        "heart_rate": hr,
+    }
+    return features
+
+
+def ensure_rpeaks_valid(rpeaks, length, filtered, sampling_rate, rpeak_det):
     ref = None
     for idx, rpeak in enumerate(rpeaks):
         if len(rpeak) < 2:
@@ -144,55 +203,3 @@ def extract_ecg_features(signal, sampling_rate=500):
                 )
             rpeaks[idx] = choice[1]
             rpeak_det[idx] = choice[0]
-
-    # correct R-peak locations
-    rpeaks = tuple(
-        correct_rpeaks(signal=sig, rpeaks=rpeak, sampling_rate=sampling_rate, tol=0.05)[
-            "rpeaks"
-        ]
-        for (sig, rpeak) in zip(filtered, rpeaks)
-    )
-
-    # extract templates
-    templates, rpeaks = zip(
-        *(
-            extract_heartbeats(
-                signal=sig,
-                rpeaks=rpeak,
-                sampling_rate=sampling_rate,
-                before=0.2,
-                after=0.4,
-            )
-            for (sig, rpeak) in zip(filtered, rpeaks)
-        )
-    )
-
-    # compute heart rate over time
-    hr_idx, hr = zip(
-        *(
-            get_heart_rate(
-                beats=rpeak, sampling_rate=sampling_rate, smooth=True, size=3
-            )
-            for rpeak in rpeaks
-        )
-    )
-
-    # create time vectors
-    T = (length - 1) / sampling_rate
-    ts = np.linspace(0, T, length, endpoint=True)
-    ts_hr = tuple(ts[r] for r in hr_idx)
-    ts_tmpl = tuple(
-        np.linspace(-0.2, 0.4, t.shape[1], endpoint=False) for t in templates
-    )
-
-    features = {
-        "ts": ts,
-        "filtered": filtered,
-        "rpeak_det": rpeak_det,
-        "rpeaks": rpeaks,
-        "templates_ts": ts_tmpl,
-        "templates": templates,
-        "heart_rate_ts": ts_hr,
-        "heart_rate": hr,
-    }
-    return features

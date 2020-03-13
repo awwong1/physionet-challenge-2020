@@ -1,8 +1,6 @@
 import os
 import unittest
 
-from tqdm import tqdm
-
 from driver import get_classes, load_challenge_data
 from util.sigproc import extract_ecg_features
 
@@ -20,10 +18,6 @@ class SigProcTest(unittest.TestCase):
                 input_files.append(f)
 
         self.input_files = tuple(sorted(input_files))
-
-    def test_input_files(self):
-        self.assertEqual(len(self.input_files), 6877)
-        self.assertEqual(self.input_files[0], "A0001.mat")
 
     def test_extract_ecg_features(self):
         tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
@@ -53,14 +47,19 @@ class SigProcTest(unittest.TestCase):
         ):
             self.assertEqual(len(all_features[key]), 12)
 
-
     def test_ecg_features_lead_consistent(self):
         # Sanity check feature extraction consistency
-        special_files = ("A0001.mat", "A0115.mat", "A0718.mat", "A3762.mat", "A5550.mat")
+        special_files = (
+            "A0001.mat",
+            "A0115.mat",
+            "A0718.mat",
+            "A3762.mat",
+            "A5550.mat",
+        )
         for input_file in special_files:
 
-        # with tqdm(sorted(self.input_files, reverse=True)) as t:
-        #     for input_file in t:
+            # with tqdm(sorted(self.input_files, reverse=True)) as t:
+            #     for input_file in t:
             tmp_input_file = os.path.join(self.input_directory, input_file)
             data, _ = load_challenge_data(tmp_input_file)
             feat = extract_ecg_features(data)
