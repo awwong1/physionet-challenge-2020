@@ -86,27 +86,47 @@ def extract_ecg_features(signal, sampling_rate=500):
         if len(rpeak) < 2:
             if ref is None:
                 ref = consensus([r for r in rpeaks if len(r) > 2], length=length)
-            trial = {
+            trial = {}
+
+            try:
                 # A. Lourenco, H. Silva, P. Leite, R. Lourenco and A. Fred, “Real Time Electrocardiogram Segmentation for Finger Based ECG Biometrics”, BIOSIGNALS 2012, pp. 49-54, 2012
                 #  biosppy.signals.ecg.engzee_segmenter(signal=None, sampling_rate=1000.0, threshold=0.48)
-                "engzee": engzee_segmenter(filtered[idx], sampling_rate=sampling_rate),
+                trial["engzee"] = engzee_segmenter(
+                    filtered[idx], sampling_rate=sampling_rate
+                )
+            except Exception:
+                pass
+
+            try:
                 # Ivaylo I. Christov, “Real time electrocardiogram QRS detection using combined adaptive threshold”, BioMedical Engineering OnLine 2004, vol. 3:28, 2004
                 #  biosppy.signals.ecg.christov_segmenter(signal=None, sampling_rate=1000.0)
-                "christov": christov_segmenter(
+                trial["christov"] = christov_segmenter(
                     filtered[idx], sampling_rate=sampling_rate
-                ),
+                )
+            except Exception:
+                pass
+
+            try:
                 # Gamboa
                 #  biosppy.signals.ecg.gamboa_segmenter(signal=None, sampling_rate=1000.0, tol=0.002)
-                "gamboa": gamboa_segmenter(filtered[idx], sampling_rate=sampling_rate),
+                trial["gamboa"] = gamboa_segmenter(
+                    filtered[idx], sampling_rate=sampling_rate
+                )
+            except Exception:
+                pass
+
+            try:
                 # Slope Sum Function (SSF)
                 #  biosppy.signals.ecg.ssf_segmenter(signal=None, sampling_rate=1000.0, threshold=20, before=0.03, after=0.01)
-                "ssf": ssf_segmenter(filtered[idx], sampling_rate=sampling_rate),
-            }
+                trial["ssf"] = ssf_segmenter(filtered[idx], sampling_rate=sampling_rate)
+            except Exception:
+                pass
 
             # Only keep the algorithms that could detect more than 2 beats
             trial = [
                 (k, v["rpeaks"]) for (k, v) in trial.items() if len(v["rpeaks"]) > 2
             ]
+
             if trial:
                 # pick the algorithm with best performance relative to the consensus hamilton
 
@@ -118,7 +138,10 @@ def extract_ecg_features(signal, sampling_rate=500):
                 )
             else:
                 # no algorithm could detect peaks, default to the reference
-                choice = ("consensus", ref,)
+                choice = (
+                    "consensus",
+                    ref,
+                )
             rpeaks[idx] = choice[1]
             rpeak_det[idx] = choice[0]
 

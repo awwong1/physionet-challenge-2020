@@ -56,10 +56,10 @@ class SigProcTest(unittest.TestCase):
 
     def test_ecg_features_lead_consistent(self):
         # Sanity check feature extraction consistency
-        # bad_files = ("A0115.mat", "A0718.mat", "A3762.mat")
+        # bad_files = ("A0115.mat", "A0718.mat", "A3762.mat", "A5550.mat")
         # for input_file in bad_files:
 
-        with tqdm(self.input_files) as t:
+        with tqdm(sorted(self.input_files, reverse=True)) as t:
             for input_file in t:
                 tmp_input_file = os.path.join(self.input_directory, input_file)
                 data, _ = load_challenge_data(tmp_input_file)
