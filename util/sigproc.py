@@ -5,14 +5,32 @@ from functools import partial
 import numpy as np
 from biosppy.signals.ecg import (
     christov_segmenter,
+    compare_segmentation,
     correct_rpeaks,
-    extract_heartbeats,
-    hamilton_segmenter,
     engzee_segmenter,
+    extract_heartbeats,
     gamboa_segmenter,
+    hamilton_segmenter,
     ssf_segmenter,
 )
 from biosppy.signals.tools import filter_signal, get_heart_rate
+from scipy.signal import find_peaks
+from sklearn.neighbors import KernelDensity
+
+
+def consensus(lists_of_rpeaks, length=8500, bandwidth=1.0):
+    """
+    var_list: iterable of iterables. sub-iterables must be sorted in ascending order.
+    """
+    X = np.array([i for sub in lists_of_rpeaks for i in sub])[:, np.newaxis]
+    X_plot = np.linspace(0, length, length)[:, np.newaxis]
+
+    kde = KernelDensity(bandwidth=bandwidth).fit(X)
+    log_dens = kde.score_samples(X_plot)
+
+    peaks, _ = find_peaks(log_dens)
+
+    return np.array(tuple(int(i) for i in X_plot[peaks].squeeze()))
 
 
 def extract_ecg_features(signal, sampling_rate=500):
@@ -35,6 +53,7 @@ def extract_ecg_features(signal, sampling_rate=500):
     # some bad files:
     # A0115.mat
     # A0718.mat
+    # A3762.mat
 
     sampling_rate = float(sampling_rate)
     _num_leads, length = signal.shape
@@ -62,8 +81,11 @@ def extract_ecg_features(signal, sampling_rate=500):
 
     # SANITY CHECK! If a a lead returns <2 peaks, it's an error!
     # try a different segmentation algorithm?
+    ref = None
     for idx, rpeak in enumerate(rpeaks):
         if len(rpeak) < 2:
+            if ref is None:
+                ref = consensus([r for r in rpeaks if len(r) > 2], length=length)
             trial = {
                 # A. Lourenco, H. Silva, P. Leite, R. Lourenco and A. Fred, “Real Time Electrocardiogram Segmentation for Finger Based ECG Biometrics”, BIOSIGNALS 2012, pp. 49-54, 2012
                 #  biosppy.signals.ecg.engzee_segmenter(signal=None, sampling_rate=1000.0, threshold=0.48)
@@ -81,15 +103,23 @@ def extract_ecg_features(signal, sampling_rate=500):
                 "ssf": ssf_segmenter(filtered[idx], sampling_rate=sampling_rate),
             }
 
-            # pick the algorithm that returned a length closest to the others
-            other_lens = [len(x) for x in rpeaks if len(x) >= 2]
-            avg_other_lens = sum(other_lens) / len(other_lens)
+            # Only keep the algorithms that could detect more than 2 beats
+            trial = [
+                (k, v["rpeaks"]) for (k, v) in trial.items() if len(v["rpeaks"]) > 2
+            ]
+            if trial:
+                # pick the algorithm with best performance relative to the consensus hamilton
 
-            choice = min(
-                [(k, v) for (k, v) in trial.items() if len(v["rpeaks"]) > 2],
-                key=lambda x: abs(len(x[1]["rpeaks"]) - avg_other_lens),
-            )
-            rpeaks[idx] = choice[1]["rpeaks"]
+                choice = min(
+                    trial,
+                    key=lambda x: compare_segmentation(
+                        reference=ref, test=x[1], sampling_rate=sampling_rate
+                    )["performance"],
+                )
+            else:
+                # no algorithm could detect peaks, default to the reference
+                choice = ("consensus", ref,)
+            rpeaks[idx] = choice[1]
             rpeak_det[idx] = choice[0]
 
     # correct R-peak locations
