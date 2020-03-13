@@ -56,30 +56,30 @@ class SigProcTest(unittest.TestCase):
 
     def test_ecg_features_lead_consistent(self):
         # Sanity check feature extraction consistency
-        # bad_files = ("A0115.mat", "A0718.mat", "A3762.mat", "A5550.mat")
-        # for input_file in bad_files:
+        special_files = ("A0001.mat", "A0115.mat", "A0718.mat", "A3762.mat", "A5550.mat")
+        for input_file in special_files:
 
-        with tqdm(sorted(self.input_files, reverse=True)) as t:
-            for input_file in t:
-                tmp_input_file = os.path.join(self.input_directory, input_file)
-                data, _ = load_challenge_data(tmp_input_file)
-                feat = extract_ecg_features(data)
+        # with tqdm(sorted(self.input_files, reverse=True)) as t:
+        #     for input_file in t:
+            tmp_input_file = os.path.join(self.input_directory, input_file)
+            data, _ = load_challenge_data(tmp_input_file)
+            feat = extract_ecg_features(data)
 
-                self.assertTrue(
-                    all(f.shape == feat["filtered"][0].shape for f in feat["filtered"]),
-                    f"{input_file} filtered outlier",
+            self.assertTrue(
+                all(f.shape == feat["filtered"][0].shape for f in feat["filtered"]),
+                f"{input_file} filtered outlier",
+            )
+            self.assertTrue(
+                all(
+                    f.shape == feat["templates_ts"][0].shape
+                    for f in feat["templates_ts"]
+                ),
+                f"{input_file} templates_ts outlier",
+            )
+            # heartrate shape should always be 1 less than rpeaks shape
+            for idx in range(12):
+                self.assertGreater(
+                    feat["rpeaks"][idx].shape[0],
+                    feat["heart_rate"][idx].shape[0],
+                    f"{input_file} heart_rate outlier lead {idx}",
                 )
-                self.assertTrue(
-                    all(
-                        f.shape == feat["templates_ts"][0].shape
-                        for f in feat["templates_ts"]
-                    ),
-                    f"{input_file} templates_ts outlier",
-                )
-                # heartrate shape should always be 1 less than rpeaks shape
-                for idx in range(12):
-                    self.assertGreater(
-                        feat["rpeaks"][idx].shape[0],
-                        feat["heart_rate"][idx].shape[0],
-                        f"{input_file} heart_rate outlier lead {idx}",
-                    )
