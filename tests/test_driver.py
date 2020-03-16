@@ -33,6 +33,8 @@ class DriverTest(unittest.TestCase):
         data, header_data = load_challenge_data(tmp_input_file)
 
         self.assertEqual(data.shape, (12, 7500))
+
+        # https://physionet.org/physiotools/wag/header-5.htm
         self.assertEqual(
             header_data,
             [

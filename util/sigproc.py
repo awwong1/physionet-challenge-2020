@@ -1,21 +1,24 @@
 """Functions for manual feature extraction of ECG 12 lead signals.
 """
+import math
+import re
 from functools import partial
+from collections import OrderedDict
 
 import numpy as np
-from biosppy.signals.ecg import (
-    christov_segmenter,
-    compare_segmentation,
-    correct_rpeaks,
-    engzee_segmenter,
-    extract_heartbeats,
-    gamboa_segmenter,
-    hamilton_segmenter,
-    ssf_segmenter,
-)
+from biosppy.signals.ecg import (christov_segmenter, compare_segmentation,
+                                 correct_rpeaks, engzee_segmenter,
+                                 extract_heartbeats, gamboa_segmenter,
+                                 hamilton_segmenter, ssf_segmenter)
 from biosppy.signals.tools import filter_signal, get_heart_rate
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, resample
 from sklearn.neighbors import KernelDensity
+from wfdb import Record
+from wfdb.io import _header
+
+LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
+SEX = ("Male", "Female")
+RPEAK_DET_ALG = ("hamilton", "engzee", "christov", "gamboa", "ssf", "consensus")
 
 
 def consensus(lists_of_rpeaks, length=8500, bandwidth=1.0):
@@ -203,3 +206,118 @@ def ensure_rpeaks_valid(rpeaks, length, filtered, sampling_rate, rpeak_det):
                 )
             rpeaks[idx] = choice[1]
             rpeak_det[idx] = choice[0]
+
+
+def parse_header_data(header_data):
+    # split header data and comments
+    header_lines = []
+    comment_lines = []
+    for line in header_data:
+        line = line.strip()
+        if line.startswith("#"):
+            comment_lines.append(line)
+        elif line:
+            ci = line.find("#")
+            if ci > 0:
+                header_lines.append(line[:ci])
+                comment_lines.append(line[ci:])
+            else:
+                header_lines.append(line)
+
+    # Get fields from record line
+    record_fields = _header._parse_record_line(header_lines[0])
+    signal_fields = _header._parse_signal_lines(header_lines[1:])
+
+    # Set the comments field
+    comments = [line.strip(' \t#') for line in comment_lines]
+    raw_age, raw_sx, raw_dx, _rx, _hx, _sx = comments
+
+    dx_grp = re.search(r"^Dx: (?P<dx>.*)$", raw_dx)
+    target = [0.0] * len(LABELS)
+    for dxi in dx_grp.group("dx").split(","):
+        target[LABELS.index(dxi)] = 1.0
+
+    age_grp = re.search(r"^Age: (?P<age>.*)$", raw_age)
+    age = float(age_grp.group("age"))
+    if math.isnan(age):
+        age = -1.0
+
+    sx_grp = re.search(r"^Sex: (?P<sx>.*)$", raw_sx)
+    sex = [0.0, 0.0]
+    sex[SEX.index(sx_grp.group("sx"))] = 1.0
+
+    comment_fields = {
+        "age": age,
+        "target": target,
+        "sex": sex
+    }
+
+    return {
+        "record": record_fields,
+        "signal": signal_fields,
+        "comment": comment_fields
+    }
+
+
+def extract_record_features(data, headers, template_resample=60):
+    header_data = parse_header_data(headers)
+    ecg_features = extract_ecg_features(data)
+    ts = ecg_features["ts"]
+
+    features = OrderedDict()
+
+    features["male"] = header_data["comment"]["sex"][0]
+    features["female"] = header_data["comment"]["sex"][1]
+    features["age"] = header_data["comment"]["age"]
+    for l_idx, label in enumerate(LABELS):
+        features[f"target_{label}"] = header_data["comment"]["target"][l_idx]
+
+    for idx in range(header_data["record"]["n_sig"]):
+        sig_name = header_data["signal"]["sig_name"][idx]
+
+        heart_rate = ecg_features["heart_rate"][idx]
+        heart_rate_ts = ecg_features["heart_rate_ts"][idx]
+        rpeak_det = ecg_features["rpeak_det"][idx]
+        rpeaks = ecg_features["rpeaks"][idx]
+        templates = ecg_features["templates"][idx]
+        templates_ts = ecg_features["templates_ts"][idx]
+
+        # heart rate features
+        features[f"l_{sig_name}_hr_len"] = len(heart_rate)
+        features[f"l_{sig_name}_hr_max"] = np.max(heart_rate)
+        features[f"l_{sig_name}_hr_min"] = np.min(heart_rate)
+        features[f"l_{sig_name}_hr_median"] = np.median(heart_rate)
+        features[f"l_{sig_name}_hr_mean"] = np.mean(heart_rate)
+        features[f"l_{sig_name}_hr_std"] = np.std(heart_rate)
+        features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
+
+        # r-peak features
+        features[f"l_{sig_name}_rp_len"] = len(rpeaks)
+        for rpeak_alg in RPEAK_DET_ALG:
+            features[f"l_{sig_name}_rp_{rpeak_alg}"] = int(rpeak_det == rpeak_alg)
+        # convert the rpeaks to be relative to prior value
+        rel_rpeaks = []
+        for r_idx in range(len(rpeaks) -1, 0, -1):
+            rel_rpeaks.append(rpeaks[r_idx] - rpeaks[r_idx - 1])
+        features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
+        features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
+        features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
+        features[f"l_{sig_name}_rp_median"] = np.median(rel_rpeaks)
+        features[f"l_{sig_name}_rp_mean"] = np.mean(rel_rpeaks)
+        features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
+        features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
+
+        if template_resample:
+            templates = resample(templates, template_resample, axis=1)
+
+        _num_templates, num_samples = templates.shape
+        for t_sample in range(num_samples):
+            t_slice = templates[:, t_sample]
+            features[f"l_{sig_name}_tp_{t_sample}_max"] = np.max(t_slice)
+            features[f"l_{sig_name}_tp_{t_sample}_min"] = np.min(t_slice)
+            features[f"l_{sig_name}_tp_{t_sample}_median"] = np.median(t_slice)
+            features[f"l_{sig_name}_tp_{t_sample}_mean"] = np.mean(t_slice)
+            features[f"l_{sig_name}_tp_{t_sample}_std"] = np.std(t_slice)
+            features[f"l_{sig_name}_tp_{t_sample}_var"] = np.var(t_slice)
+
+    return features

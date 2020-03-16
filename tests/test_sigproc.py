@@ -2,7 +2,7 @@ import os
 import unittest
 
 from driver import get_classes, load_challenge_data
-from util.sigproc import extract_ecg_features
+from util.sigproc import extract_ecg_features, parse_header_data
 
 
 class SigProcTest(unittest.TestCase):
@@ -82,3 +82,31 @@ class SigProcTest(unittest.TestCase):
                     feat["heart_rate"][idx].shape[0],
                     f"{input_file} heart_rate outlier lead {idx}",
                 )
+
+    def test_parse_header_data(self):
+        header_data = [
+            "A0001 12 500 7500 05-Feb-2020 11:39:16\n",
+            "A0001.mat 16+24 1000/mV 16 0 28 -1716 0 I\n",
+            "A0001.mat 16+24 1000/mV 16 0 7 2029 0 II\n",
+            "A0001.mat 16+24 1000/mV 16 0 -21 3745 0 III\n",
+            "A0001.mat 16+24 1000/mV 16 0 -17 3680 0 aVR\n",
+            "A0001.mat 16+24 1000/mV 16 0 24 -2664 0 aVL\n",
+            "A0001.mat 16+24 1000/mV 16 0 -7 -1499 0 aVF\n",
+            "A0001.mat 16+24 1000/mV 16 0 -290 390 0 V1\n",
+            "A0001.mat 16+24 1000/mV 16 0 -204 157 0 V2\n",
+            "A0001.mat 16+24 1000/mV 16 0 -96 -2555 0 V3\n",
+            "A0001.mat 16+24 1000/mV 16 0 -112 49 0 V4\n",
+            "A0001.mat 16+24 1000/mV 16 0 -596 -321 0 V5\n",
+            "A0001.mat 16+24 1000/mV 16 0 -16 -3112 0 V6\n",
+            "#Age: 74\n",
+            "#Sex: Male\n",
+            "#Dx: RBBB\n",
+            "#Rx: Unknown\n",
+            "#Hx: Unknown\n",
+            "#Sx: Unknows\n",
+        ]
+        record = parse_header_data(header_data)
+        self.assertCountEqual(record.keys(), ("record", "signal", "comment"))
+        self.assertEqual(record["comment"]["age"], 74)
+        self.assertEqual(record["comment"]["sex"], [1, 0])
+        self.assertEqual(record["comment"]["target"], [0, 0, 0, 0, 0, 0, 1, 0, 0])

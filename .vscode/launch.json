@@ -19,6 +19,14 @@
             "program": "${workspaceFolder}/driver.py",
             "args": ["Training_WFDB", "out"],
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: feature_extraction.json",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": ["configs/feature_extraction.json"],
+            "console": "integratedTerminal"
         }
     ]
 }
