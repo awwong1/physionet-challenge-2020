@@ -10,7 +10,8 @@ from biosppy.signals.ecg import (christov_segmenter, compare_segmentation,
                                  correct_rpeaks, engzee_segmenter,
                                  extract_heartbeats, gamboa_segmenter,
                                  hamilton_segmenter, ssf_segmenter)
-from biosppy.signals.tools import filter_signal, get_heart_rate
+from biosppy.signals.tools import filter_signal, smoother
+from biosppy.utils import ReturnTuple
 from scipy.signal import find_peaks, resample
 from sklearn.neighbors import KernelDensity
 from wfdb import Record
@@ -115,9 +116,51 @@ def extract_ecg_features(signal, sampling_rate=500):
 
     # compute heart rate over time
     def hr_map(beats):
-        return get_heart_rate(
-            beats=beats, sampling_rate=sampling_rate, smooth=True, size=3
-        )
+        """Compute instantaneous heart rate from an array of beat indices.
+
+        Parameters
+        ----------
+        beats : array
+            Beat location indices.
+        sampling_rate : int, float, optional
+            Sampling frequency (Hz).
+        smooth : bool, optional
+            If True, perform smoothing on the resulting heart rate.
+        size : int, optional
+            Size of smoothing window; ignored if `smooth` is False.
+
+        Returns
+        -------
+        index : array
+            Heart rate location indices.
+        heart_rate : array
+            Instantaneous heart rate (bpm).
+
+        Notes
+        -----
+        * Assumes normal human heart rate to be between 40 and 200 bpm.
+
+        """
+        # check inputs
+        if beats is None:
+            raise TypeError("Please specify the input beat indices.")
+
+        if len(beats) < 2:
+            raise ValueError("Not enough beats to compute heart rate.")
+
+        # compute heart rate
+        ts = beats[1:]
+        hr = sampling_rate * (60. / np.diff(beats))
+
+        indx = np.nonzero(np.logical_and(hr >= 0, hr <= 200))
+        ts = ts[indx]
+        hr = hr[indx]
+
+        # smooth with moving average
+        if (len(hr) > 1):
+            hr, _ = smoother(signal=hr, kernel='boxcar', size=3, mirror=True)
+
+        return ReturnTuple((ts, hr), ('index', 'heart_rate'))
 
     hr_idx, hr = zip(*(map(hr_map, rpeaks)))
 
@@ -292,20 +335,21 @@ def extract_record_features(data, headers, template_resample=60):
         features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
 
         # r-peak features
-        features[f"l_{sig_name}_rp_len"] = len(rpeaks)
         for rpeak_alg in RPEAK_DET_ALG:
             features[f"l_{sig_name}_rp_{rpeak_alg}"] = int(rpeak_det == rpeak_alg)
+
         # convert the rpeaks to be relative to prior value
-        rel_rpeaks = []
-        for r_idx in range(len(rpeaks) -1, 0, -1):
-            rel_rpeaks.append(rpeaks[r_idx] - rpeaks[r_idx - 1])
-        features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
-        features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
-        features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
-        features[f"l_{sig_name}_rp_median"] = np.median(rel_rpeaks)
-        features[f"l_{sig_name}_rp_mean"] = np.mean(rel_rpeaks)
-        features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
-        features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
+        # this information is already used for heart rate... unnecessary?
+
+        # features[f"l_{sig_name}_rp_len"] = len(rpeaks)
+        # rel_rpeaks = np.diff(rpeaks)
+        # features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_median"] = np.median(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_mean"] = np.mean(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
+        # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
 
         if template_resample:
             templates = resample(templates, template_resample, axis=1)
