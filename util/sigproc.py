@@ -305,11 +305,9 @@ def extract_record_features(data, headers, template_resample=60):
 
     features = OrderedDict()
 
-    features["male"] = header_data["comment"]["sex"][0]
-    features["female"] = header_data["comment"]["sex"][1]
-    features["age"] = header_data["comment"]["age"]
-    for l_idx, label in enumerate(LABELS):
-        features[f"target_{label}"] = header_data["comment"]["target"][l_idx]
+    features["sex"] = np.array(header_data["comment"]["sex"])
+    features["age"] = np.array(header_data["comment"]["age"])
+    features["target"] = np.array(header_data["comment"]["target"])
 
     for idx in range(header_data["record"]["n_sig"]):
         sig_name = header_data["signal"]["sig_name"][idx]
@@ -322,8 +320,9 @@ def extract_record_features(data, headers, template_resample=60):
         # templates_ts = ecg_features["templates_ts"][idx]
 
         # r-peak features
-        for rpeak_alg in RPEAK_DET_ALG:
-            features[f"l_{sig_name}_rp_{rpeak_alg}"] = int(rpeak_det == rpeak_alg)
+        rpeak_det_alg = np.zeros(len(RPEAK_DET_ALG))
+        rpeak_det_alg[RPEAK_DET_ALG.index(rpeak_det)] = 1.0
+        features[f"l_{sig_name}_rp_det_alg"] = rpeak_det_alg
 
         # convert the rpeaks to be relative to prior value
         # this information is already used for heart rate... unnecessary?
@@ -339,20 +338,20 @@ def extract_record_features(data, headers, template_resample=60):
         # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
 
         # heart rate features
-        features[f"l_{sig_name}_hr_len"] = len(heart_rate)
+        features[f"l_{sig_name}_hr_len"] = np.array(len(heart_rate))
         heart_rate_data = np.zeros(6)
         # features[f"l_{sig_name}_hr_max"] = np.max(heart_rate)
-        heart_rate_data = np.max(heart_rate)
+        heart_rate_data[0] = np.max(heart_rate)
         # features[f"l_{sig_name}_hr_min"] = np.min(heart_rate)
-        heart_rate_data = np.min(heart_rate)
+        heart_rate_data[1] = np.min(heart_rate)
         # features[f"l_{sig_name}_hr_median"] = np.median(heart_rate)
-        heart_rate_data = np.median(heart_rate)
+        heart_rate_data[2] = np.median(heart_rate)
         # features[f"l_{sig_name}_hr_mean"] = np.mean(heart_rate)
-        heart_rate_data = np.mean(heart_rate)
+        heart_rate_data[3] = np.mean(heart_rate)
         # features[f"l_{sig_name}_hr_std"] = np.std(heart_rate)
-        heart_rate_data = np.std(heart_rate)
+        heart_rate_data[4] = np.std(heart_rate)
         # features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
-        heart_rate_data = np.var(heart_rate)
+        heart_rate_data[5] = np.var(heart_rate)
 
         features[f"l_{sig_name}_hr"] = heart_rate_data
 

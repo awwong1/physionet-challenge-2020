@@ -38,10 +38,15 @@ class FeatureExtractionAgent(BaseAgent):
 
             features = extract_record_features(data, headers)
 
+            target = features.pop("target")
+            inputs = np.concatenate([k.flatten() for k in features.values()])
+
+            assert len(inputs) == 4479, f"Input length not consistent on {input_file}"
+
             bn = os.path.splitext(input_file)[0]
             out_f = os.path.join(self.out_dir, f"{bn}.npz")
 
-            np.savez(out_f, **features)
+            np.savez(out_f, inputs=inputs, target=target)
 
     def finalize(self):
         if self.tqdm:

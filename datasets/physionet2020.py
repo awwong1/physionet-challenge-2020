@@ -245,7 +245,7 @@ class PhysioNet2020Dataset(Dataset):
         return train_records, val_records
 
     @staticmethod
-    def split_names_cv(data_dir, fold=5, val_offset=0):
+    def split_names_cv(data_dir, fold=5, val_offset=0, endswith=".hea"):
         """Split the record names up into n-fold cross validation tuples
         fold: (int) number of cross validation sets (>= 2)
         val_offset: (int) current validation offset (0 < fold)
@@ -261,7 +261,7 @@ class PhysioNet2020Dataset(Dataset):
                 if (
                     os.path.isfile(os.path.join(data_dir, f))
                     and not f.lower().startswith(".")
-                    and f.lower().endswith(".hea")
+                    and f.lower().endswith(endswith)
                 )
             ]
         )
