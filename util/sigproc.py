@@ -6,10 +6,16 @@ from functools import partial
 from collections import OrderedDict
 
 import numpy as np
-from biosppy.signals.ecg import (christov_segmenter, compare_segmentation,
-                                 correct_rpeaks, engzee_segmenter,
-                                 extract_heartbeats, gamboa_segmenter,
-                                 hamilton_segmenter, ssf_segmenter)
+from biosppy.signals.ecg import (
+    christov_segmenter,
+    compare_segmentation,
+    correct_rpeaks,
+    engzee_segmenter,
+    extract_heartbeats,
+    gamboa_segmenter,
+    hamilton_segmenter,
+    ssf_segmenter,
+)
 from biosppy.signals.tools import filter_signal, smoother
 from biosppy.utils import ReturnTuple
 from scipy.signal import find_peaks, resample
@@ -64,7 +70,9 @@ def extract_ecg_features(signal, sampling_rate=500):
     num_leads, length = signal.shape
 
     if num_leads > 12:
-        raise RuntimeError(f"Maximum of 12 leads supported, signal contains {num_leads}")
+        raise RuntimeError(
+            f"Maximum of 12 leads supported, signal contains {num_leads}"
+        )
 
     # filter signal
     order = int(0.3 * sampling_rate)
@@ -150,17 +158,13 @@ def extract_ecg_features(signal, sampling_rate=500):
 
         # compute heart rate
         ts = beats[1:]
-        hr = sampling_rate * (60. / np.diff(beats))
-
-        indx = np.nonzero(np.logical_and(hr >= 0, hr <= 200))
-        ts = ts[indx]
-        hr = hr[indx]
+        hr = sampling_rate * (60.0 / np.diff(beats))
 
         # smooth with moving average
-        if (len(hr) > 1):
-            hr, _ = smoother(signal=hr, kernel='boxcar', size=3, mirror=True)
+        if len(hr) > 1:
+            hr, _ = smoother(signal=hr, kernel="boxcar", size=3, mirror=True)
 
-        return ReturnTuple((ts, hr), ('index', 'heart_rate'))
+        return ReturnTuple((ts, hr), ("index", "heart_rate"))
 
     hr_idx, hr = zip(*(map(hr_map, rpeaks)))
 
@@ -272,7 +276,7 @@ def parse_header_data(header_data):
     signal_fields = _header._parse_signal_lines(header_lines[1:])
 
     # Set the comments field
-    comments = [line.strip(' \t#') for line in comment_lines]
+    comments = [line.strip(" \t#") for line in comment_lines]
     raw_age, raw_sx, raw_dx, _rx, _hx, _sx = comments
 
     dx_grp = re.search(r"^Dx: (?P<dx>.*)$", raw_dx)
@@ -289,17 +293,9 @@ def parse_header_data(header_data):
     sex = [0.0, 0.0]
     sex[SEX.index(sx_grp.group("sx"))] = 1.0
 
-    comment_fields = {
-        "age": age,
-        "target": target,
-        "sex": sex
-    }
+    comment_fields = {"age": age, "target": target, "sex": sex}
 
-    return {
-        "record": record_fields,
-        "signal": signal_fields,
-        "comment": comment_fields
-    }
+    return {"record": record_fields, "signal": signal_fields, "comment": comment_fields}
 
 
 def extract_record_features(data, headers, template_resample=60):
@@ -319,20 +315,11 @@ def extract_record_features(data, headers, template_resample=60):
         sig_name = header_data["signal"]["sig_name"][idx]
 
         heart_rate = ecg_features["heart_rate"][idx]
-        heart_rate_ts = ecg_features["heart_rate_ts"][idx]
+        # heart_rate_ts = ecg_features["heart_rate_ts"][idx]
         rpeak_det = ecg_features["rpeak_det"][idx]
-        rpeaks = ecg_features["rpeaks"][idx]
+        # rpeaks = ecg_features["rpeaks"][idx]
         templates = ecg_features["templates"][idx]
-        templates_ts = ecg_features["templates_ts"][idx]
-
-        # heart rate features
-        features[f"l_{sig_name}_hr_len"] = len(heart_rate)
-        features[f"l_{sig_name}_hr_max"] = np.max(heart_rate)
-        features[f"l_{sig_name}_hr_min"] = np.min(heart_rate)
-        features[f"l_{sig_name}_hr_median"] = np.median(heart_rate)
-        features[f"l_{sig_name}_hr_mean"] = np.mean(heart_rate)
-        features[f"l_{sig_name}_hr_std"] = np.std(heart_rate)
-        features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
+        # templates_ts = ecg_features["templates_ts"][idx]
 
         # r-peak features
         for rpeak_alg in RPEAK_DET_ALG:
@@ -351,17 +338,44 @@ def extract_record_features(data, headers, template_resample=60):
         # features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
         # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
 
+        # heart rate features
+        features[f"l_{sig_name}_hr_len"] = len(heart_rate)
+        heart_rate_data = np.zeros(6)
+        # features[f"l_{sig_name}_hr_max"] = np.max(heart_rate)
+        heart_rate_data = np.max(heart_rate)
+        # features[f"l_{sig_name}_hr_min"] = np.min(heart_rate)
+        heart_rate_data = np.min(heart_rate)
+        # features[f"l_{sig_name}_hr_median"] = np.median(heart_rate)
+        heart_rate_data = np.median(heart_rate)
+        # features[f"l_{sig_name}_hr_mean"] = np.mean(heart_rate)
+        heart_rate_data = np.mean(heart_rate)
+        # features[f"l_{sig_name}_hr_std"] = np.std(heart_rate)
+        heart_rate_data = np.std(heart_rate)
+        # features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
+        heart_rate_data = np.var(heart_rate)
+
+        features[f"l_{sig_name}_hr"] = heart_rate_data
+
         if template_resample:
             templates = resample(templates, template_resample, axis=1)
 
-        _num_templates, num_samples = templates.shape
+        num_templates, num_samples = templates.shape
+        templates_data = np.zeros((6, num_samples))
+
         for t_sample in range(num_samples):
             t_slice = templates[:, t_sample]
-            features[f"l_{sig_name}_tp_{t_sample}_max"] = np.max(t_slice)
-            features[f"l_{sig_name}_tp_{t_sample}_min"] = np.min(t_slice)
-            features[f"l_{sig_name}_tp_{t_sample}_median"] = np.median(t_slice)
-            features[f"l_{sig_name}_tp_{t_sample}_mean"] = np.mean(t_slice)
-            features[f"l_{sig_name}_tp_{t_sample}_std"] = np.std(t_slice)
-            features[f"l_{sig_name}_tp_{t_sample}_var"] = np.var(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_max"] = np.max(t_slice)
+            templates_data[0][t_sample] = np.max(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_min"] = np.min(t_slice)
+            templates_data[1][t_sample] = np.min(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_median"] = np.median(t_slice)
+            templates_data[2][t_sample] = np.median(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_mean"] = np.mean(t_slice)
+            templates_data[3][t_sample] = np.mean(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_std"] = np.std(t_slice)
+            templates_data[4][t_sample] = np.std(t_slice)
+            # features[f"l_{sig_name}_tp_{t_sample}_var"] = np.var(t_slice)
+            templates_data[4][t_sample] = np.var(t_slice)
+        features[f"l_{sig_name}_templates"] = templates_data
 
     return features
