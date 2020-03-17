@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 import numpy as np
+from sklearn.preprocessing import LabelBinarizer
 
 from datasets import PhysioNet2020Dataset
 
@@ -98,11 +99,18 @@ class ScikitLearnAgent(BaseAgent):
 
     def evaluate_and_log(self, inputs, targets, mode="Training"):
         outputs = self.classifier.predict(inputs)
+
+        # if output shape is not two dimensional, expand
+        if len(outputs.shape) == 1:
+            lb = LabelBinarizer()
+            lb.fit(outputs)
+            outputs = lb.transform(outputs)
+
         try:
             probabilities = self.classifier.predict_proba(inputs)
         except AttributeError as e:
             self.logger.info(f"Fallback probabilities to outputs, {e}")
-            probabilities = outputs
+            probabilities = outputs.astype(np.float)
 
         if type(probabilities) == list:
             for idx in range(len(probabilities)):
