@@ -98,7 +98,11 @@ class ScikitLearnAgent(BaseAgent):
 
     def evaluate_and_log(self, inputs, targets, mode="Training"):
         outputs = self.classifier.predict(inputs)
-        probabilities = self.classifier.predict_proba(inputs)
+        try:
+            probabilities = self.classifier.predict_proba(inputs)
+        except AttributeError as e:
+            self.logger.info(f"Fallback probabilities to outputs, {e}")
+            probabilities = outputs
 
         if type(probabilities) == list:
             for idx in range(len(probabilities)):
