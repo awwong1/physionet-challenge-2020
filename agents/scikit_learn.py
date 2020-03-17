@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime
 
@@ -5,7 +6,6 @@ import numpy as np
 from sklearn.preprocessing import LabelBinarizer
 
 from datasets import PhysioNet2020Dataset
-
 from util.config import init_class
 from util.evaluation import compute_auc, compute_beta_score
 
@@ -34,6 +34,7 @@ class ScikitLearnAgent(BaseAgent):
         self.data_dir = config.get(
             "data_dir", "experiments/PhysioNet2020/FeatureExtraction/out"
         )
+        self.output_dir = config["out_dir"]
         cross_validation = config.get("cross_validation", None)
 
         train_records, val_records = PhysioNet2020Dataset.split_names_cv(
@@ -97,6 +98,13 @@ class ScikitLearnAgent(BaseAgent):
         self.evaluate_and_log(inputs, targets, mode="Validation")
         self.logger.info(f"Took {datetime.now() - start}\n")
 
+    def finalize(self):
+        params = self.classifier.get_params()
+        wp = os.path.join(self.output_dir, "params.json")
+        with open(wp, "w") as f:
+            json.dump(params, f)
+            self.logger.info(f"Saved classifier parameters to {wp}")
+
     def evaluate_and_log(self, inputs, targets, mode="Training"):
         outputs = self.classifier.predict(inputs)
 
@@ -130,3 +138,12 @@ class ScikitLearnAgent(BaseAgent):
             + f"f_beta: {train_scores[2]} | g_beta: {train_scores[3]} | "
             + f"auroc: {train_scores[4]} | auprc: {train_scores[5]} "
         )
+
+        wp = os.path.join(self.output_dir, "scores")
+        with open(wp, "a") as f:
+            f.write(
+                f"| {mode} Set | "
+                + f"acc: {train_scores[0]:.3f} | f_measure: {train_scores[1]:.3f} | "
+                + f"f_beta: {train_scores[2]:.3f} | g_beta: {train_scores[3]:.3f} | "
+                + f"auroc: {train_scores[4]:.3f} | auprc: {train_scores[5]:.3f} |\n"
+            )
