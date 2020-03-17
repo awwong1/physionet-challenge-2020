@@ -1,0 +1,13 @@
+{
+  "exp_name": "PhysioNet2020/Scikit_Learn/base",
+  "agent": "agents.scikit_learn.ScikitLearnAgent",
+  "data_dir": "experiments/PhysioNet2020/FeatureExtraction/out",
+  "cross_validation": {
+    "fold": 5,
+    "val_offset": 0
+  },
+
+  "classifier": {
+    "name": "sklearn.tree.DecisionTreeClassifier"
+  }
+}
