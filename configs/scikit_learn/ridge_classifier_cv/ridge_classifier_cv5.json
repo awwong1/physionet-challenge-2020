@@ -8,6 +8,6 @@
   },
 
   "classifier": {
-    "name": "sklearn.ensemble.RidgeClassifierCV"
+    "name": "sklearn.linear_model.RidgeClassifierCV"
   }
 }
