@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 import numpy as np
 
@@ -65,25 +66,35 @@ class ScikitLearnAgent(BaseAgent):
             return inputs, targets
 
         self.logger.info("Preparing training data...")
+        start = datetime.now()
         train_data = map(load_data_cache, self.train_records)
         inputs, targets = zip(*train_data)
         inputs = np.stack(inputs)
         targets = np.stack(targets)
+        self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Fitting classifier on training data...")
+        start = datetime.now()
         self.classifier.fit(inputs, targets)
+        self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Calculating scores on training data...")
+        start = datetime.now()
         self.evaluate_and_log(inputs, targets, mode="Training")
+        self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Preparing validation data...")
+        start = datetime.now()
         data = map(load_data_cache, self.val_records)
         inputs, targets = zip(*data)
         inputs = np.stack(inputs)
         targets = np.stack(targets)
+        self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Calculating scores on validation data...")
+        start = datetime.now()
         self.evaluate_and_log(inputs, targets, mode="Validation")
+        self.logger.info(f"Took {datetime.now() - start}\n")
 
     def evaluate_and_log(self, inputs, targets, mode="Training"):
         outputs = self.classifier.predict(inputs)
