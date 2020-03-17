@@ -9,4 +9,4 @@ configs/scikit_learn/k_neighbors/run_cv5.sh
 configs/scikit_learn/mlp/run_cv5.sh
 configs/scikit_learn/radius_neighbors/run_cv5.sh
 configs/scikit_learn/random_forest/run_cv5.sh
-configs/scikit_learn/ridge_classifier/run_cv5.sh
+configs/scikit_learn/ridge_classifier_cv/run_cv5.sh

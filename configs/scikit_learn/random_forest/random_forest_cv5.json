@@ -8,6 +8,9 @@
   },
 
   "classifier": {
-    "name": "sklearn.ensemble.RandomForestClassifier"
+    "name": "sklearn.ensemble.RandomForestClassifier",
+    "kwargs": {
+      "n_estimators": 100
+    }
   }
 }
