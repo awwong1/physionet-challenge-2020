@@ -13,18 +13,7 @@ from . import BaseAgent
 
 
 class ScikitLearnAgent(BaseAgent):
-    """Agent for PhysioNet 2020 challenge classification experiments using Scikit Learn
-
-    Multilabel classification problem.
-
-    sklearn.tree.DecisionTreeClassifier
-    sklearn.tree.ExtraTreeClassifier
-    sklearn.ensemble.ExtraTreesClassifier
-    sklearn.neighbors.KNeighborsClassifier
-    sklearn.neural_network.MLPClassifier
-    sklearn.neighbors.RadiusNeighborsClassifier
-    sklearn.ensemble.RandomForestClassifier
-    sklearn.linear_model.RidgeClassifierCV
+    """Agent for PhysioNet 2020 challenge classification experiments using Scikit Learn classifiers
     """
 
     def __init__(self, config):
@@ -40,6 +29,9 @@ class ScikitLearnAgent(BaseAgent):
         train_records, val_records = PhysioNet2020Dataset.split_names_cv(
             self.data_dir, endswith=".npz", **cross_validation
         )
+
+        self.cv_tag = "cv{fold}-{val_offset}".format(**cross_validation)
+
         self.logger.info(
             "Training on %d records (%s, ..., %s)",
             len(train_records),
@@ -100,9 +92,15 @@ class ScikitLearnAgent(BaseAgent):
 
     def finalize(self):
         params = self.classifier.get_params()
-        wp = os.path.join(self.output_dir, "params.json")
-        with open(wp, "w") as f:
-            json.dump(params, f)
+        try:
+            wp = os.path.join(self.output_dir, "params.json")
+            with open(wp, "w") as f:
+                json.dump(params, f)
+                self.logger.info(f"Saved classifier parameters to {wp}")
+        except TypeError:
+            # TypeError: Object of type 'ndarray' is not JSON serializable
+            wp = os.path.join(self.output_dir, "params.npy")
+            np.save(wp, params)
             self.logger.info(f"Saved classifier parameters to {wp}")
 
     def evaluate_and_log(self, inputs, targets, mode="Training"):
@@ -132,18 +130,24 @@ class ScikitLearnAgent(BaseAgent):
         # auroc, auprc
         auc_score = compute_auc(targets, probabilities)
         train_scores = np.array(beta_score + auc_score)
-        self.logger.info(f"{mode} set mean scores:")
+        self.logger.info(f"{self.cv_tag}/{mode} mean scores:")
         self.logger.info(
             f"acc: {train_scores[0]} | f_measure: {train_scores[1]} | "
             + f"f_beta: {train_scores[2]} | g_beta: {train_scores[3]} | "
             + f"auroc: {train_scores[4]} | auprc: {train_scores[5]} "
         )
 
-        wp = os.path.join(self.output_dir, "scores")
+        file_exists = os.path.isfile(wp)
+        wp = os.path.join(self.output_dir, "scores.txt")
         with open(wp, "a") as f:
+            if not file_exists:
+                f.write(
+                    "| Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n" +
+                    "|---------|----------|-----------|--------|--------|-------|-------|\n"
+                )
             f.write(
-                f"| {mode} Set | "
-                + f"acc: {train_scores[0]:.3f} | f_measure: {train_scores[1]:.3f} | "
-                + f"f_beta: {train_scores[2]:.3f} | g_beta: {train_scores[3]:.3f} | "
-                + f"auroc: {train_scores[4]:.3f} | auprc: {train_scores[5]:.3f} |\n"
+                f"| {self.cv_tag}/{mode} | "
+                + f"{train_scores[0]:.3f} | {train_scores[1]:.3f} | "
+                + f"{train_scores[2]:.3f} | {train_scores[3]:.3f} | "
+                + f"{train_scores[4]:.3f} | {train_scores[5]:.3f} |\n"
             )

@@ -18,6 +18,7 @@ class FeatureExtractionAgent(BaseAgent):
 
         self.input_directory = config.get("input_directory", "Training_WFDB")
         self.out_dir = config["out_dir"]
+        self.erf_options = config.get("extract_record_features", {})
 
         input_files = []
         for f in os.listdir(self.input_directory):
@@ -36,12 +37,12 @@ class FeatureExtractionAgent(BaseAgent):
             fp = os.path.join(self.input_directory, input_file)
             data, headers = load_challenge_data(fp)
 
-            features = extract_record_features(data, headers)
+            features = extract_record_features(data, headers, **self.erf_options)
 
             target = features.pop("target")
             inputs = np.concatenate([k.flatten() for k in features.values()])
 
-            assert len(inputs) == 4479, f"Input length not consistent on {input_file}"
+            # assert len(inputs) == 4479, f"Input length not consistent on {input_file}"
 
             bn = os.path.splitext(input_file)[0]
             out_f = os.path.join(self.out_dir, f"{bn}.npz")

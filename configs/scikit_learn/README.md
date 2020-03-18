@@ -1,6 +1,28 @@
 # Results
 
-## DecisionTree
+Scikit-learn [docs](https://scikit-learn.org/stable/modules/multiclass.html).
+
+- Multiclass Classification: classification task with more than two classes. Each sample can only be labelled as one class.
+
+- Multilabel Classification: classification task labelling each sample with `x` labels from `n_classes` possible classes, where `x` can be 0 to `n_classes` inclusive.
+    - All Multiclass Classification algorithms can become multilabel classification algorithms using the [MultiOutputClassifier](https://scikit-learn.org/stable/modules/generated/sklearn.multioutput.MultiOutputClassifier.html#sklearn.multioutput.MultiOutputClassifier).
+
+## Multilabel Algorithms
+
+The following algorithms are Scikit learn Multilabel supporting algorithms.
+
+```
+    sklearn.tree.DecisionTreeClassifier
+    sklearn.tree.ExtraTreeClassifier
+    sklearn.ensemble.ExtraTreesClassifier
+    sklearn.neighbors.KNeighborsClassifier
+    sklearn.neural_network.MLPClassifier
+    sklearn.neighbors.RadiusNeighborsClassifier
+    sklearn.ensemble.RandomForestClassifier
+    sklearn.linear_model.RidgeClassifierCV
+```
+
+### DecisionTree
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
@@ -14,7 +36,7 @@
 | cv-3/Validate Set | 0.917 | 0.575 | 0.577 | 0.354 | 0.000 | 0.000 |
 | cv-4/Validate Set | 0.923 | 0.617 | 0.624 | 0.384 | 0.000 | 0.000 |
 
-## ExtraTreeClassifier
+### ExtraTreeClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
@@ -28,7 +50,7 @@
 | cv-3/Validate Set | 0.905 | 0.511 | 0.516 | 0.287 | 0.000 | 0.000 |
 | cv-4/Validate Set | 0.893 | 0.495 | 0.498 | 0.280 | 0.000 | 0.000 |
 
-## ExtraTreesClassifier
+### ExtraTreesClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
@@ -42,7 +64,7 @@
 | cv-3/Validate Set | 0.942 | 0.543 | 0.473 | 0.313 | 0.837 | 0.672 |
 | cv-4/Validate Set | 0.943 | 0.575 | 0.502 | 0.340 | 0.842 | 0.715 |
 
-## KNeighborsClassifier
+### KNeighborsClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 0.922 | 0.467 | 0.410 | 0.234 | 0.847 | 0.511 |
@@ -56,7 +78,7 @@
 | cv-3/Validate Set | 0.893 | 0.315 | 0.280 | 0.142 | 0.521 | 0.234 |
 | cv-4/Validate Set | 0.897 | 0.324 | 0.281 | 0.143 | 0.601 | 0.279 |
 
-## MLPClassifier
+### MLPClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 0.889 | 0.083 | 0.055 | 0.023 | 0.500 | 0.123 |
@@ -70,7 +92,7 @@
 | cv-3/Validate Set | 0.879 | 0.071 | 0.052 | 0.022 | 0.482 | 0.115 |
 | cv-4/Validate Set | 0.889 | 0.151 | 0.121 | 0.058 | 0.500 | 0.118 |
 
-## RadiusNeighborsClassifier
+### RadiusNeighborsClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
@@ -80,11 +102,10 @@
 | cv-4/Training Set | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
 
 ```
-ValueError: No neighbors found for test samples array([   0,    1,    2, ..., 1370, 1371, 1372]), you can try using larger radius, g$
-ving a label for outliers, or considering removing them from your dataset.
+ValueError: No neighbors found for test samples array([   0,    1,    2, ..., 1370, 1371, 1372]), you can try using larger radius, giving a label for outliers, or considering removing them from your dataset.
 ```
 
-## RandomForestClassifier
+### RandomForestClassifier
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 1.000 | 1.000 | 0.999 | 0.999 | 0.973 | 0.973 |
@@ -98,7 +119,7 @@ ving a label for outliers, or considering removing them from your dataset.
 | cv-3/Validate Set | 0.950 | 0.618 | 0.550 | 0.379 | 0.941 | 0.785 |
 | cv-4/Validate Set | 0.950 | 0.644 | 0.570 | 0.390 | 0.953 | 0.826 |
 
-## RidgeClassifierCV
+### RidgeClassifierCV
 | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
 |-------------------|-------|-------|-------|-------|-------|-------|
 | cv-0/Training Set | 0.994 | 0.968 | 0.955 | 0.893 | 0.000 | 0.000 |
@@ -111,3 +132,22 @@ ving a label for outliers, or considering removing them from your dataset.
 | cv-2/Validate Set | 0.898 | 0.461 | 0.447 | 0.235 | 0.000 | 0.000 |
 | cv-3/Validate Set | 0.895 | 0.474 | 0.458 | 0.237 | 0.000 | 0.000 |
 | cv-4/Validate Set | 0.893 | 0.465 | 0.451 | 0.235 | 0.000 | 0.000 |
+
+
+## Multiclass 
+
+The following algorithms are Scikit learn **Inherently Multiclass** algorithms that do not support multilabel.
+
+```
+    sklearn.naive_bayes.BernoulliNB
+    sklearn.naive_bayes.GaussianNB
+    sklearn.semi_supervised.LabelPropagation
+    sklearn.semi_supervised.LabelSpreading
+    sklearn.discriminant_analysis.LinearDiscriminantAnalysis
+    sklearn.svm.LinearSVC (setting multi_class=”crammer_singer”)
+    sklearn.linear_model.LogisticRegression (setting multi_class=”multinomial”)
+    sklearn.linear_model.LogisticRegressionCV (setting multi_class=”multinomial”)
+    sklearn.neighbors.NearestCentroid
+    sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis
+    sklearn.linear_model.RidgeClassifier
+```

@@ -6,6 +6,7 @@ from functools import partial
 from collections import OrderedDict
 
 import numpy as np
+import scipy
 from biosppy.signals.ecg import (
     christov_segmenter,
     compare_segmentation,
@@ -18,7 +19,7 @@ from biosppy.signals.ecg import (
 )
 from biosppy.signals.tools import filter_signal, smoother
 from biosppy.utils import ReturnTuple
-from scipy.signal import find_peaks, resample
+from scipy.signal import find_peaks, resample, windows
 from sklearn.neighbors import KernelDensity
 from wfdb import Record
 from wfdb.io import _header
@@ -298,7 +299,15 @@ def parse_header_data(header_data):
     return {"record": record_fields, "signal": signal_fields, "comment": comment_fields}
 
 
-def extract_record_features(data, headers, template_resample=60):
+def extract_record_features(
+    data,
+    headers,
+    template_resample=60,
+    include_fourier=False,
+    window_function="hann",
+    freq_cap=50,
+    num_bins=100,
+):
     header_data = parse_header_data(headers)
     ecg_features = extract_ecg_features(data)
     ts = ecg_features["ts"]
@@ -315,7 +324,7 @@ def extract_record_features(data, headers, template_resample=60):
         heart_rate = ecg_features["heart_rate"][idx]
         # heart_rate_ts = ecg_features["heart_rate_ts"][idx]
         rpeak_det = ecg_features["rpeak_det"][idx]
-        # rpeaks = ecg_features["rpeaks"][idx]
+        rpeaks = ecg_features["rpeaks"][idx]
         templates = ecg_features["templates"][idx]
         # templates_ts = ecg_features["templates_ts"][idx]
 
@@ -324,11 +333,9 @@ def extract_record_features(data, headers, template_resample=60):
         rpeak_det_alg[RPEAK_DET_ALG.index(rpeak_det)] = 1.0
         features[f"l_{sig_name}_rp_det_alg"] = rpeak_det_alg
 
-        # convert the rpeaks to be relative to prior value
-        # this information is already used for heart rate... unnecessary?
-
         # features[f"l_{sig_name}_rp_len"] = len(rpeaks)
-        # rel_rpeaks = np.diff(rpeaks)
+        rel_rpeaks = np.diff(rpeaks)
+        # this information is already used for heart rate... unnecessary?
         # features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
         # features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
         # features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
@@ -337,20 +344,65 @@ def extract_record_features(data, headers, template_resample=60):
         # features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
         # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
 
+        # Bin, Guangyu & Shao, Minggang & Guanghong, Bin & Huang, Jiao & Zheng, Dingchang & Wu, Shuicai. (2017).
+        # Detection of Atrial Fibrillation Using Decision Tree Ensemble. 10.22489/CinC.2017.342-204.
+        # Hand engineered RR interval features
+        mrr = np.median(rel_rpeaks)
+        rr_rule_1 = False  # 1.2 * RR2 < RR1 and 1.3 * RR2 < RR3
+        rr_rule_2 = False  # |RR1 - RR2| < 0.3 * MRR and (RR1 < 0.8 * MRR or RR2 < 0.8 * MRR) and RR3 > 0.6 * (RR1 + RR2)
+        rr_rule_3 = False  # |RR3 - RR2| < 0.3 * MRR and (RR2 < 0.8 * MRR or RR3 < 0.8 * MRR) and RR1 > 0.6 * (RR2 + RR3)
+        rr_rule_4 = False  # RR2 > 1.5 * MRR and 1.5 * RR2 < 3 * MRR
+        if len(rel_rpeaks) >= 3:
+            for r_idx in range(len(rel_rpeaks) - 2):
+                rr1 = rel_rpeaks[r_idx]
+                rr2 = rel_rpeaks[r_idx + 1]
+                rr3 = rel_rpeaks[r_idx + 2]
+
+                rr_rule_1 = rr_rule_1 or ((1.2 * rr2 < rr1) and (1.3 * rr2 < rr3))
+                rr_rule_2 = rr_rule_2 or (
+                    (np.abs(rr1 - rr2) < (0.3 * mrr))
+                    and ((rr1 < (0.8 * mrr)) or (rr2 < (0.8 * mrr)))
+                    and (rr3 > (0.6 * (rr1 + rr2)))
+                )
+                rr_rule_3 = rr_rule_3 or (
+                    (np.abs(rr3 - rr2) < (0.3 * mrr))
+                    and ((rr2 < (0.8 * mrr)) or (rr3 < (0.8 * mrr)))
+                    and (rr1 > (0.6 * (rr2 + rr3)))
+                )
+        rr_rules = np.zeros(8)
+        if rr_rule_1:
+            rr_rules[1] = 1.0
+        else:
+            rr_rules[0] = 1.0
+        if rr_rule_2:
+            rr_rules[3] = 1.0
+        else:
+            rr_rules[2] = 1.0
+        if rr_rule_3:
+            rr_rules[5] = 1.0
+        else:
+            rr_rules[4] = 1.0
+        if rr_rule_4:
+            rr_rules[7] = 1.0
+        else:
+            rr_rules[6] = 1.0
+
+        features[f"l_{sig_name}_rr_int_rules"] = rr_rules
+
         # heart rate features
         features[f"l_{sig_name}_hr_len"] = np.array(len(heart_rate))
         heart_rate_data = np.zeros(6)
-        # features[f"l_{sig_name}_hr_max"] = np.max(heart_rate)
+        # max heart rate
         heart_rate_data[0] = np.max(heart_rate)
-        # features[f"l_{sig_name}_hr_min"] = np.min(heart_rate)
+        # min heart rate
         heart_rate_data[1] = np.min(heart_rate)
-        # features[f"l_{sig_name}_hr_median"] = np.median(heart_rate)
+        # median heart rate
         heart_rate_data[2] = np.median(heart_rate)
-        # features[f"l_{sig_name}_hr_mean"] = np.mean(heart_rate)
+        # mean heart rate
         heart_rate_data[3] = np.mean(heart_rate)
-        # features[f"l_{sig_name}_hr_std"] = np.std(heart_rate)
+        # heart rate standard deviation
         heart_rate_data[4] = np.std(heart_rate)
-        # features[f"l_{sig_name}_hr_var"] = np.var(heart_rate)
+        # heart rate variance
         heart_rate_data[5] = np.var(heart_rate)
 
         features[f"l_{sig_name}_hr"] = heart_rate_data
@@ -363,18 +415,45 @@ def extract_record_features(data, headers, template_resample=60):
 
         for t_sample in range(num_samples):
             t_slice = templates[:, t_sample]
-            # features[f"l_{sig_name}_tp_{t_sample}_max"] = np.max(t_slice)
+            # template max
             templates_data[0][t_sample] = np.max(t_slice)
-            # features[f"l_{sig_name}_tp_{t_sample}_min"] = np.min(t_slice)
+            # template min
             templates_data[1][t_sample] = np.min(t_slice)
-            # features[f"l_{sig_name}_tp_{t_sample}_median"] = np.median(t_slice)
+            # template median
             templates_data[2][t_sample] = np.median(t_slice)
-            # features[f"l_{sig_name}_tp_{t_sample}_mean"] = np.mean(t_slice)
+            # template mean
             templates_data[3][t_sample] = np.mean(t_slice)
-            # features[f"l_{sig_name}_tp_{t_sample}_std"] = np.std(t_slice)
+            # template standard deviation
             templates_data[4][t_sample] = np.std(t_slice)
-            # features[f"l_{sig_name}_tp_{t_sample}_var"] = np.var(t_slice)
+            # template variance
             templates_data[4][t_sample] = np.var(t_slice)
         features[f"l_{sig_name}_templates"] = templates_data
+
+        if include_fourier:
+
+            # perform FFT on raw signal with window (default hann)
+            raw_sig = data[idx, :]
+            window_sig = windows.get_window(window_function, len(raw_sig)) * raw_sig
+            x_mag = scipy.absolute(scipy.fft(window_sig))
+
+            # only keep 0hz to frequency_cap range (default 50hz)
+            end_idx = len(x_mag) // header_data["record"]["fs"] * freq_cap
+            x_mag = x_mag[:end_idx]
+
+            # Statistical mean over each frequency w.r.t bin index?
+            bins = {}
+            f = np.linspace(0, num_bins, len(x_mag))
+
+            for (magnitude, frequency) in zip(x_mag, f):
+                freq_idx = min(int(math.floor(frequency)), num_bins - 1)
+                bin_vals = bins.get(freq_idx, [])
+                bin_vals.append(magnitude)
+                bins[freq_idx] = bin_vals
+
+            x_fft_bins = np.zeros(num_bins)
+            for (frequency, magnitudes) in bins.items():
+                x_fft_bins[frequency] = np.mean(magnitudes)
+
+            features[f"l_{sig_name}_fft"] = x_fft_bins
 
     return features

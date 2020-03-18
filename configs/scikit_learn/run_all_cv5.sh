@@ -2,6 +2,7 @@
 
 # Current pwd should be at the main.py level.
 
+# Classifiers Supporting Multilabel Classification
 configs/scikit_learn/decision_tree/run_cv5.sh
 configs/scikit_learn/extra_tree/run_cv5.sh
 configs/scikit_learn/extra_trees/run_cv5.sh

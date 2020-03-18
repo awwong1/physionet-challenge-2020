@@ -1,4 +1,8 @@
 {
   "exp_name": "PhysioNet2020/FeatureExtraction",
-  "agent": "agents.feature_extraction.FeatureExtractionAgent"
+  "agent": "agents.feature_extraction.FeatureExtractionAgent",
+  "extract_record_features": {
+    "template_resample": 60,
+    "include_fourier": true
+  }
 }
