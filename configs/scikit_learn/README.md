@@ -194,6 +194,8 @@ Pipeline(memory=None,
 | cv5-4/Validation | 0.901 | 0.520 | 0.526 | 0.289 | 0.000 | 0.000 |
 
 ### ExtraTreesClassifier
+| Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |
+|---------|----------|-----------|--------|--------|-------|-------|
 | cv5-0/Training | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
 | cv5-0/Validation | 0.949 | 0.635 | 0.565 | 0.390 | 0.850 | 0.718 |
 | cv5-1/Training | 1.000 | 1.000 | 1.000 | 1.000 | 0.000 | 0.000 |
