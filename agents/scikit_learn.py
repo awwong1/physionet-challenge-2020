@@ -151,8 +151,8 @@ class ScikitLearnAgent(BaseAgent):
             + f"auroc: {train_scores[4]} | auprc: {train_scores[5]} "
         )
 
-        file_exists = os.path.isfile(wp)
         wp = os.path.join(self.output_dir, "scores.txt")
+        file_exists = os.path.isfile(wp)
         with open(wp, "a") as f:
             if not file_exists:
                 f.write(
