@@ -3,7 +3,10 @@ import os
 from datetime import datetime
 
 import numpy as np
+from sklearn.feature_selection import SelectFromModel
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelBinarizer
+from sklearn.tree import DecisionTreeClassifier
 
 from datasets import PhysioNet2020Dataset
 from util.config import init_class
@@ -47,8 +50,19 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-        self.classifier = init_class(config.get("classifier"))
+
+        if config.get("perform_feature_selection", False):
+            self.logger.info(
+                "Incorporating feature selection as part of scikit-learn pipeline..."
+            )
+            self.classifier = Pipeline([
+                ("feature_selection", SelectFromModel(DecisionTreeClassifier())),
+                ("classification", init_class(config.get("classifier")))
+            ])
+        else:
+            self.classifier = init_class(config.get("classifier"))
         self.logger.info(self.classifier)
+
 
     def run(self):
         def load_data_cache(train_record):
@@ -142,8 +156,8 @@ class ScikitLearnAgent(BaseAgent):
         with open(wp, "a") as f:
             if not file_exists:
                 f.write(
-                    "| Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n" +
-                    "|---------|----------|-----------|--------|--------|-------|-------|\n"
+                    "| Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n"
+                    + "|---------|----------|-----------|--------|--------|-------|-------|\n"
                 )
             f.write(
                 f"| {self.cv_tag}/{mode} | "

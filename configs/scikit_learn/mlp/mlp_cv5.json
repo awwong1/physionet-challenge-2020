@@ -6,7 +6,7 @@
     "fold": 5,
     "val_offset": 0
   },
-
+  "perform_feature_selection": true,
   "classifier": {
     "name": "sklearn.neural_network.MLPClassifier"
   }
