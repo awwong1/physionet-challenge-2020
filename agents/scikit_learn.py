@@ -17,10 +17,28 @@ from . import BaseAgent
 
 class ScikitLearnAgent(BaseAgent):
     """Agent for PhysioNet 2020 challenge classification experiments using Scikit Learn classifiers
+
+    Each lead gets its own classifier, then aggregate all results into another classifier
+    All classifiers must support multilabel
     """
 
     def __init__(self, config):
         super(ScikitLearnAgent, self).__init__(config)
+
+        self.leads = (
+            "I",
+            "II",
+            "III",
+            "aVR",
+            "aVL",
+            "aVF",
+            "V1",
+            "V2",
+            "V3",
+            "V4",
+            "V5",
+            "V6",
+        )
 
         # Initialize cross validation datasets
         self.data_dir = config.get(
@@ -50,75 +68,137 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-
-        if config.get("perform_feature_selection", False):
-            self.logger.info(
-                "Incorporating feature selection as part of scikit-learn pipeline..."
-            )
-            self.classifier = Pipeline([
-                ("feature_selection", SelectFromModel(DecisionTreeClassifier())),
-                ("classification", init_class(config.get("classifier")))
-            ])
-        else:
-            self.classifier = init_class(config.get("classifier"))
-        self.logger.info(self.classifier)
-
+        # initialize classifiers for all 12 leads
+        self.lead_classifiers = dict(
+            (k, init_class(config.get("lead_classifier"))) for k in self.leads
+        )
+        for k, v in self.lead_classifiers.items():
+            self.logger.info(f"{k}: {v}")
+        # initialize the meta classifiers (uses lead classifiers output as input)
+        self.stack_classifier = init_class(config.get("stack_classifier"))
+        self.logger.info(f"stack: {self.stack_classifier}")
 
     def run(self):
         def load_data_cache(train_record):
             fp = os.path.join(self.data_dir, f"{train_record}.npz")
             data = np.load(fp)
-
-            inputs = data["inputs"]
-            targets = data["target"]
-            return inputs, targets
+            return (
+                {
+                    "I": data["I"],
+                    "II": data["II"],
+                    "III": data["III"],
+                    "aVR": data["aVR"],
+                    "aVL": data["aVL"],
+                    "aVF": data["aVF"],
+                    "V1": data["V1"],
+                    "V2": data["V2"],
+                    "V3": data["V3"],
+                    "V4": data["V4"],
+                    "V5": data["V5"],
+                    "V6": data["V6"],
+                },
+                data["target"],
+            )
 
         self.logger.info("Preparing training data...")
         start = datetime.now()
         train_data = map(load_data_cache, self.train_records)
         inputs, targets = zip(*train_data)
-        inputs = np.stack(inputs)
+        lead_inputs = {}
+        for lead in self.leads:
+            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
         targets = np.stack(targets)
         self.logger.info(f"Took {datetime.now() - start}\n")
 
-        self.logger.info("Fitting classifier on training data...")
+        # train each individual lead classifier
+        stack_inputs = []
+        for lead in self.leads:
+            shape = lead_inputs[lead].shape
+            self.logger.info(
+                f"Fitting lead {lead} classifier on training data {shape}..."
+            )
+            start = datetime.now()
+            self.lead_classifiers[lead].fit(lead_inputs[lead], targets)
+            self.logger.info(f"Took {datetime.now() - start}\n")
+
+            try:
+                stack_input = self.lead_classifiers[lead].predict_proba(
+                    lead_inputs[lead]
+                )
+            except AttributeError as e:
+                stack_input = self.lead_classifiers[lead].predict(lead_inputs[lead])
+
+            if type(stack_input) == list:
+                for idx in range(len(stack_input)):
+                    stack_input[idx] = stack_input[idx][:, 1]
+                stack_input = np.stack(stack_input).T
+            stack_inputs.append(stack_input)
+
+        # construct the data for the meta/stack classifier
+        stack_inputs = np.concatenate(stack_inputs, axis=1)
+        shape = stack_inputs.shape
+        self.logger.info(f"Fitting stack classifier on training data {shape}...")
         start = datetime.now()
-        self.classifier.fit(inputs, targets)
+        self.stack_classifier.fit(stack_inputs, targets)
         self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Calculating scores on training data...")
         start = datetime.now()
-        self.evaluate_and_log(inputs, targets, mode="Training")
+        self.evaluate_and_log(lead_inputs, targets, mode="Training")
         self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Preparing validation data...")
         start = datetime.now()
         data = map(load_data_cache, self.val_records)
         inputs, targets = zip(*data)
-        inputs = np.stack(inputs)
+        lead_inputs = {}
+        for lead in self.leads:
+            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
         targets = np.stack(targets)
         self.logger.info(f"Took {datetime.now() - start}\n")
 
         self.logger.info("Calculating scores on validation data...")
         start = datetime.now()
-        self.evaluate_and_log(inputs, targets, mode="Validation")
+        self.evaluate_and_log(lead_inputs, targets, mode="Validation")
         self.logger.info(f"Took {datetime.now() - start}\n")
 
     def finalize(self):
-        params = self.classifier.get_params()
-        try:
-            wp = os.path.join(self.output_dir, "params.json")
-            with open(wp, "w") as f:
-                json.dump(params, f)
-                self.logger.info(f"Saved classifier parameters to {wp}")
-        except TypeError:
-            # TypeError: Object of type 'ndarray' is not JSON serializable
-            wp = os.path.join(self.output_dir, "params.npy")
-            np.save(wp, params)
-            self.logger.info(f"Saved classifier parameters to {wp}")
+        return 
+        # TODO: parameters do not actually correspond to classifier state, this needs to become pickle'd
 
-    def evaluate_and_log(self, inputs, targets, mode="Training"):
-        outputs = self.classifier.predict(inputs)
+        # classifiers = [("stack", self.stack_classifier), *self.lead_classifiers.items()]
+        # for name, classifier in classifiers:
+        #     params = classifier.get_params()
+        #     try:
+        #         wp = os.path.join(self.output_dir, f"{name}_params.json")
+        #         with open(wp, "w") as f:
+        #             json.dump(params, f)
+        #             self.logger.info(f"Saved classifier parameters to {wp}")
+        #     except TypeError:
+        #         # TypeError: Object of type 'ndarray' is not JSON serializable
+        #         wp = os.path.join(self.output_dir, f"{name}_params.npy")
+        #         np.save(wp, params)
+        #         self.logger.info(f"Saved classifier parameters to {wp}")
+
+    def evaluate_and_log(self, lead_inputs, targets, mode="Training"):
+        # evaluate each individual lead classifier
+        stack_inputs = []
+        for lead in self.leads:
+            try:
+                stack_input = self.lead_classifiers[lead].predict_proba(
+                    lead_inputs[lead]
+                )
+            except AttributeError as e:
+                stack_input = self.lead_classifiers[lead].predict(lead_inputs[lead])
+
+            if type(stack_input) == list:
+                for idx in range(len(stack_input)):
+                    stack_input[idx] = stack_input[idx][:, 1]
+                stack_input = np.stack(stack_input).T
+            stack_inputs.append(stack_input)
+
+        stack_inputs = np.concatenate(stack_inputs, axis=1)
+        outputs = self.stack_classifier.predict(stack_inputs)
 
         # if output shape is not two dimensional, expand
         if len(outputs.shape) == 1:
@@ -127,9 +207,8 @@ class ScikitLearnAgent(BaseAgent):
             outputs = lb.transform(outputs)
 
         try:
-            probabilities = self.classifier.predict_proba(inputs)
+            probabilities = self.stack_classifier.predict_proba(stack_inputs)
         except AttributeError as e:
-            self.logger.info(f"Fallback probabilities to outputs, {e}")
             probabilities = outputs.astype(np.float)
 
         if type(probabilities) == list:
@@ -137,7 +216,7 @@ class ScikitLearnAgent(BaseAgent):
                 probabilities[idx] = probabilities[idx][:, 1]
             probabilities = np.stack(probabilities).T
 
-        num_inputs, _ = inputs.shape
+        num_inputs, _ = stack_inputs.shape
         train_scores = np.zeros((num_inputs, 6))
         # accuracy, f_measure, f_beta, g_beta
         beta_score = compute_beta_score(targets, outputs)
