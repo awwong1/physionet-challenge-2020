@@ -1,0 +1,5 @@
+{
+  "exp_name": "PhysioNet2020/Scikit_Learn/results",
+  "agent": "agents.aggregate_skl_results.ScikitLearnResultsAgent",
+  "input_glob": "experiments/PhysioNet2020/Scikit_Learn_RFC_Feature_Selection/**/**/out/scores.txt"
+}
