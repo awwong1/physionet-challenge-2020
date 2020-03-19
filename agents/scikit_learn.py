@@ -72,8 +72,11 @@ class ScikitLearnAgent(BaseAgent):
         self.lead_classifiers = dict(
             (k, init_class(config.get("lead_classifier"))) for k in self.leads
         )
+        self.lead_classifier_name = config["lead_classifier"]["name"].split(".")[-1]
+        
         for k, v in self.lead_classifiers.items():
             self.logger.info(f"{k}: {v}")
+            break
         # initialize the meta classifiers (uses lead classifiers output as input)
         self.stack_classifier = init_class(config.get("stack_classifier"))
         self.logger.info(f"stack: {self.stack_classifier}")
@@ -135,7 +138,13 @@ class ScikitLearnAgent(BaseAgent):
             stack_inputs.append(stack_input)
 
         # construct the data for the meta/stack classifier
-        stack_inputs = np.concatenate(stack_inputs, axis=1)
+        dims = set([len(si.shape) for si in stack_inputs])
+        assert len(dims) == 1, "stack dimensions must be equal"
+        dim = dims.pop()
+        if dim == 2:
+            stack_inputs = np.concatenate(stack_inputs, axis=1)
+        elif dim  == 1:
+            stack_inputs = np.stack(stack_inputs).T
         shape = stack_inputs.shape
         self.logger.info(f"Fitting stack classifier on training data {shape}...")
         start = datetime.now()
@@ -197,7 +206,14 @@ class ScikitLearnAgent(BaseAgent):
                 stack_input = np.stack(stack_input).T
             stack_inputs.append(stack_input)
 
-        stack_inputs = np.concatenate(stack_inputs, axis=1)
+        dims = set([len(si.shape) for si in stack_inputs])
+        assert len(dims) == 1, "stack dimensions must be equal"
+        dim = dims.pop()
+        if dim == 2:
+            stack_inputs = np.concatenate(stack_inputs, axis=1)
+        elif dim  == 1:
+            stack_inputs = np.stack(stack_inputs).T
+
         outputs = self.stack_classifier.predict(stack_inputs)
 
         # if output shape is not two dimensional, expand
@@ -235,12 +251,12 @@ class ScikitLearnAgent(BaseAgent):
         with open(wp, "a") as f:
             if not file_exists:
                 f.write(
-                    "| Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n"
-                    + "|---------|----------|-----------|--------|--------|-------|-------|\n"
+                    "| Lead Classifier | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n"
+                  + "|-----------------|---------|----------|-----------|--------|--------|-------|-------|\n"
                 )
             f.write(
-                f"| {self.cv_tag}/{mode} | "
-                + f"{train_scores[0]:.3f} | {train_scores[1]:.3f} | "
-                + f"{train_scores[2]:.3f} | {train_scores[3]:.3f} | "
-                + f"{train_scores[4]:.3f} | {train_scores[5]:.3f} |\n"
+                f"| {self.lead_classifier_name} | {self.cv_tag}/{mode} | "
+                + f"{train_scores[0]:.4f} | {train_scores[1]:.4f} | "
+                + f"{train_scores[2]:.4f} | {train_scores[3]:.4f} | "
+                + f"{train_scores[4]:.4f} | {train_scores[5]:.4f} |\n"
             )

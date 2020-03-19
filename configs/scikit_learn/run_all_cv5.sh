@@ -11,7 +11,16 @@
 # sklearn.ensemble.RandomForestClassifier
 # sklearn.linear_model.RidgeClassifierCV
 
-classifiers=(sklearn.tree.DecisionTreeClassifier sklearn.tree.ExtraTreeClassifier sklearn.ensemble.ExtraTreesClassifier sklearn.neighbors.KNeighborsClassifier sklearn.neural_network.MLPClassifier sklearn.neighbors.RadiusNeighborsClassifier sklearn.ensemble.RandomForestClassifier sklearn.linear_model.RidgeClassifierCV)
+classifiers=(
+    sklearn.tree.DecisionTreeClassifier
+    sklearn.tree.ExtraTreeClassifier
+    sklearn.ensemble.ExtraTreesClassifier
+    sklearn.neighbors.KNeighborsClassifier
+    sklearn.neural_network.MLPClassifier
+    sklearn.neighbors.RadiusNeighborsClassifier
+    sklearn.ensemble.RandomForestClassifier
+    sklearn.linear_model.RidgeClassifierCV
+)
 
 for classifier in ${classifiers[*]}
 do
