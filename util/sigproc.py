@@ -318,6 +318,7 @@ def extract_record_features(
     features["age"] = np.array(header_data["comment"]["age"])
     features["target"] = np.array(header_data["comment"]["target"])
 
+    sig_features = OrderedDict((sn, OrderedDict()) for sn in header_data["signal"]["sig_name"])
     for idx in range(header_data["record"]["n_sig"]):
         sig_name = header_data["signal"]["sig_name"][idx]
 
@@ -331,66 +332,14 @@ def extract_record_features(
         # r-peak features
         rpeak_det_alg = np.zeros(len(RPEAK_DET_ALG))
         rpeak_det_alg[RPEAK_DET_ALG.index(rpeak_det)] = 1.0
-        features[f"l_{sig_name}_rp_det_alg"] = rpeak_det_alg
+        sig_features[sig_name]["rp_det_alg"] = rpeak_det_alg
+        sig_features[sig_name]["rp_det_alg"] = rpeak_det_alg
 
-        # features[f"l_{sig_name}_rp_len"] = len(rpeaks)
-        rel_rpeaks = np.diff(rpeaks)
-        # this information is already used for heart rate... unnecessary?
-        # features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_median"] = np.median(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_mean"] = np.mean(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
-        # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
-
-        # Bin, Guangyu & Shao, Minggang & Guanghong, Bin & Huang, Jiao & Zheng, Dingchang & Wu, Shuicai. (2017).
-        # Detection of Atrial Fibrillation Using Decision Tree Ensemble. 10.22489/CinC.2017.342-204.
-        # Hand engineered RR interval features
-        mrr = np.median(rel_rpeaks)
-        rr_rule_1 = False  # 1.2 * RR2 < RR1 and 1.3 * RR2 < RR3
-        rr_rule_2 = False  # |RR1 - RR2| < 0.3 * MRR and (RR1 < 0.8 * MRR or RR2 < 0.8 * MRR) and RR3 > 0.6 * (RR1 + RR2)
-        rr_rule_3 = False  # |RR3 - RR2| < 0.3 * MRR and (RR2 < 0.8 * MRR or RR3 < 0.8 * MRR) and RR1 > 0.6 * (RR2 + RR3)
-        rr_rule_4 = False  # RR2 > 1.5 * MRR and 1.5 * RR2 < 3 * MRR
-        if len(rel_rpeaks) >= 3:
-            for r_idx in range(len(rel_rpeaks) - 2):
-                rr1 = rel_rpeaks[r_idx]
-                rr2 = rel_rpeaks[r_idx + 1]
-                rr3 = rel_rpeaks[r_idx + 2]
-
-                rr_rule_1 = rr_rule_1 or ((1.2 * rr2 < rr1) and (1.3 * rr2 < rr3))
-                rr_rule_2 = rr_rule_2 or (
-                    (np.abs(rr1 - rr2) < (0.3 * mrr))
-                    and ((rr1 < (0.8 * mrr)) or (rr2 < (0.8 * mrr)))
-                    and (rr3 > (0.6 * (rr1 + rr2)))
-                )
-                rr_rule_3 = rr_rule_3 or (
-                    (np.abs(rr3 - rr2) < (0.3 * mrr))
-                    and ((rr2 < (0.8 * mrr)) or (rr3 < (0.8 * mrr)))
-                    and (rr1 > (0.6 * (rr2 + rr3)))
-                )
-        rr_rules = np.zeros(8)
-        if rr_rule_1:
-            rr_rules[1] = 1.0
-        else:
-            rr_rules[0] = 1.0
-        if rr_rule_2:
-            rr_rules[3] = 1.0
-        else:
-            rr_rules[2] = 1.0
-        if rr_rule_3:
-            rr_rules[5] = 1.0
-        else:
-            rr_rules[4] = 1.0
-        if rr_rule_4:
-            rr_rules[7] = 1.0
-        else:
-            rr_rules[6] = 1.0
-
-        features[f"l_{sig_name}_rr_int_rules"] = rr_rules
+        # sig_features[sig_name]["rp_len"] = len(rpeaks)
+        sig_features[sig_name]["rr_int_rules"] = determine_rpeaks_rr_rules(rpeaks)
 
         # heart rate features
-        features[f"l_{sig_name}_hr_len"] = np.array(len(heart_rate))
+        sig_features[sig_name]["hr_len"] = np.array(len(heart_rate))
         heart_rate_data = np.zeros(6)
         # max heart rate
         heart_rate_data[0] = np.max(heart_rate)
@@ -405,7 +354,7 @@ def extract_record_features(
         # heart rate variance
         heart_rate_data[5] = np.var(heart_rate)
 
-        features[f"l_{sig_name}_hr"] = heart_rate_data
+        sig_features[sig_name]["hr"] = heart_rate_data
 
         if template_resample:
             templates = resample(templates, template_resample, axis=1)
@@ -427,10 +376,9 @@ def extract_record_features(
             templates_data[4][t_sample] = np.std(t_slice)
             # template variance
             templates_data[4][t_sample] = np.var(t_slice)
-        features[f"l_{sig_name}_templates"] = templates_data
+        sig_features[sig_name]["templates"] = templates_data
 
         if include_fourier:
-
             # perform FFT on raw signal with window (default hann)
             raw_sig = data[idx, :]
             window_sig = windows.get_window(window_function, len(raw_sig)) * raw_sig
@@ -454,6 +402,67 @@ def extract_record_features(
             for (frequency, magnitudes) in bins.items():
                 x_fft_bins[frequency] = np.mean(magnitudes)
 
-            features[f"l_{sig_name}_fft"] = x_fft_bins
+            sig_features[sig_name]["fft"] = x_fft_bins
+
+    features["sig"] = sig_features
 
     return features
+
+def determine_rpeaks_rr_rules(rpeaks):
+    # features[f"l_{sig_name}_rp_len"] = len(rpeaks)
+    rel_rpeaks = np.diff(rpeaks)
+    # this information is already used for heart rate... unnecessary?
+    # features[f"l_{sig_name}_rp_len"] = len(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_max"] = np.max(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_min"] = np.min(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_median"] = np.median(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_mean"] = np.mean(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_std"] = np.std(rel_rpeaks)
+    # features[f"l_{sig_name}_rp_var"] = np.var(rel_rpeaks)
+
+    # Bin, Guangyu & Shao, Minggang & Guanghong, Bin & Huang, Jiao & Zheng, Dingchang & Wu, Shuicai. (2017).
+    # Detection of Atrial Fibrillation Using Decision Tree Ensemble. 10.22489/CinC.2017.342-204.
+    # Hand engineered RR interval features
+    mrr = np.median(rel_rpeaks)
+    rr_rule_1 = False  # 1.2 * RR2 < RR1 and 1.3 * RR2 < RR3
+    rr_rule_2 = False  # |RR1 - RR2| < 0.3 * MRR and (RR1 < 0.8 * MRR or RR2 < 0.8 * MRR) and RR3 > 0.6 * (RR1 + RR2)
+    rr_rule_3 = False  # |RR3 - RR2| < 0.3 * MRR and (RR2 < 0.8 * MRR or RR3 < 0.8 * MRR) and RR1 > 0.6 * (RR2 + RR3)
+    rr_rule_4 = False  # RR2 > 1.5 * MRR and 1.5 * RR2 < 3 * MRR
+    if len(rel_rpeaks) >= 3:
+        for r_idx in range(len(rel_rpeaks) - 2):
+            rr1 = rel_rpeaks[r_idx]
+            rr2 = rel_rpeaks[r_idx + 1]
+            rr3 = rel_rpeaks[r_idx + 2]
+
+            rr_rule_1 = rr_rule_1 or ((1.2 * rr2 < rr1) and (1.3 * rr2 < rr3))
+            rr_rule_2 = rr_rule_2 or (
+                (np.abs(rr1 - rr2) < (0.3 * mrr))
+                and ((rr1 < (0.8 * mrr)) or (rr2 < (0.8 * mrr)))
+                and (rr3 > (0.6 * (rr1 + rr2)))
+            )
+            rr_rule_3 = rr_rule_3 or (
+                (np.abs(rr3 - rr2) < (0.3 * mrr))
+                and ((rr2 < (0.8 * mrr)) or (rr3 < (0.8 * mrr)))
+                and (rr1 > (0.6 * (rr2 + rr3)))
+            )
+            rr_rule_4 = rr_rule_4 or (
+                (rr2 > (1.5 * mrr)) and ((1.5 * rr2) < (3 * mrr))
+            )
+    rr_rules = np.zeros(8)
+    if rr_rule_1:
+        rr_rules[1] = 1.0
+    else:
+        rr_rules[0] = 1.0
+    if rr_rule_2:
+        rr_rules[3] = 1.0
+    else:
+        rr_rules[2] = 1.0
+    if rr_rule_3:
+        rr_rules[5] = 1.0
+    else:
+        rr_rules[4] = 1.0
+    if rr_rule_4:
+        rr_rules[7] = 1.0
+    else:
+        rr_rules[6] = 1.0
+    return rr_rules
