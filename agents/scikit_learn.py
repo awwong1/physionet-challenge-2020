@@ -68,12 +68,22 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-        # initialize classifiers for all 12 leads
-        self.lead_classifiers = dict(
-            (k, init_class(config.get("lead_classifier"))) for k in self.leads
-        )
+        setup_lead_pipeline_feature_selection = config.get("lead_pipeline_feature_selection", None)
+
+        if setup_lead_pipeline_feature_selection:
+            self.lead_classifiers = dict(
+                (k, Pipeline([
+                    ("feature_selection", SelectFromModel(init_class(setup_lead_pipeline_feature_selection))),
+                    ("lead_classification", init_class(config["lead_classifier"]))
+                ])) for k in self.leads
+            )
+        else:
+            # initialize classifiers for all 12 leads
+            self.lead_classifiers = dict(
+                (k, init_class(config["lead_classifier"])) for k in self.leads
+            )
         self.lead_classifier_name = config["lead_classifier"]["name"].split(".")[-1]
-        
+
         for k, v in self.lead_classifiers.items():
             self.logger.info(f"{k}: {v}")
             break
