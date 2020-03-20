@@ -12,15 +12,15 @@ Scikit-learn [docs](https://scikit-learn.org/stable/modules/multiclass.html).
 The following algorithms are Scikit learn Multilabel supporting algorithms.
 Each lead is evaluates separately, then the results are stacked together and passed to a `RandomForestClassifier` ensemble.
 
-```
-    sklearn.tree.DecisionTreeClassifier
-    sklearn.tree.ExtraTreeClassifier
-    sklearn.ensemble.ExtraTreesClassifier
-    sklearn.neighbors.KNeighborsClassifier
-    sklearn.neural_network.MLPClassifier
-    sklearn.neighbors.RadiusNeighborsClassifier
-    sklearn.ensemble.RandomForestClassifier
-    sklearn.linear_model.RidgeClassifierCV
+```python
+sklearn.tree.DecisionTreeClassifier
+sklearn.tree.ExtraTreeClassifier
+sklearn.ensemble.ExtraTreesClassifier
+sklearn.neighbors.KNeighborsClassifier
+sklearn.neural_network.MLPClassifier
+sklearn.neighbors.RadiusNeighborsClassifier
+sklearn.ensemble.RandomForestClassifier
+sklearn.linear_model.RidgeClassifierCV # added MultiOutputClassification, even though supports Fit on n-label y
 ```
 
 ### No feature selection
@@ -137,16 +137,37 @@ Same as above, but a Scikit-learn pipeline with a RandomForestClassifier to sele
 
 TODO: The following algorithms are Scikit learn **Inherently Multiclass** algorithms that do not support multilabel.
 
+```python
+sklearn.naive_bayes.BernoulliNB
+sklearn.naive_bayes.GaussianNB
+sklearn.semi_supervised.LabelPropagation
+sklearn.semi_supervised.LabelSpreading
+sklearn.discriminant_analysis.LinearDiscriminantAnalysis
+sklearn.svm.LinearSVC (setting multi_class=”crammer_singer”)
+sklearn.linear_model.LogisticRegression (setting multi_class=”multinomial”)
+sklearn.linear_model.LogisticRegressionCV (setting multi_class=”multinomial”)
+sklearn.neighbors.NearestCentroid
+sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis
+sklearn.linear_model.RidgeClassifier
 ```
-    sklearn.naive_bayes.BernoulliNB
-    sklearn.naive_bayes.GaussianNB
-    sklearn.semi_supervised.LabelPropagation
-    sklearn.semi_supervised.LabelSpreading
-    sklearn.discriminant_analysis.LinearDiscriminantAnalysis
-    sklearn.svm.LinearSVC (setting multi_class=”crammer_singer”)
-    sklearn.linear_model.LogisticRegression (setting multi_class=”multinomial”)
-    sklearn.linear_model.LogisticRegressionCV (setting multi_class=”multinomial”)
-    sklearn.neighbors.NearestCentroid
-    sklearn.discriminant_analysis.QuadraticDiscriminantAnalysis
-    sklearn.linear_model.RidgeClassifier
+
+## Multiclass as One-Vs-One
+
+```python
+sklearn.svm.NuSVC
+sklearn.svm.SVC
+sklearn.gaussian_process.GaussianProcessClassifier # (setting multi_class = “one_vs_one”)
+```
+
+## Multiclass as One-Vs-The-Rest
+
+```python
+sklearn.ensemble.GradientBoostingClassifier
+sklearn.gaussian_process.GaussianProcessClassifier # (setting multi_class = “one_vs_rest”)
+sklearn.svm.LinearSVC # (setting multi_class=”ovr”)
+sklearn.linear_model.LogisticRegression # (setting multi_class=”ovr”)
+sklearn.linear_model.LogisticRegressionCV #(setting multi_class=”ovr”)
+sklearn.linear_model.SGDClassifier
+sklearn.linear_model.Perceptron
+sklearn.linear_model.PassiveAggressiveClassifier
 ```

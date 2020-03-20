@@ -4,6 +4,7 @@ from datetime import datetime
 
 import numpy as np
 from sklearn.feature_selection import SelectFromModel
+from sklearn.multioutput import MultiOutputClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelBinarizer
 from sklearn.tree import DecisionTreeClassifier
@@ -68,24 +69,38 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-        setup_lead_pipeline_feature_selection = config.get("lead_pipeline_feature_selection", None)
+        setup_lead_pipeline_feature_selection = config.get(
+            "lead_pipeline_feature_selection", None
+        )
 
-        if setup_lead_pipeline_feature_selection:
-            self.lead_classifiers = dict(
-                (k, Pipeline([
-                    ("feature_selection", SelectFromModel(init_class(setup_lead_pipeline_feature_selection))),
-                    ("lead_classification", init_class(config["lead_classifier"]))
-                ])) for k in self.leads
-            )
-        else:
-            # initialize classifiers for all 12 leads
-            self.lead_classifiers = dict(
-                (k, init_class(config["lead_classifier"])) for k in self.leads
-            )
+        # determine if multioutput classification plug is required
+        is_multioutput = self.check_multioutput(init_class(config["lead_classifier"]))
+
+        self.lead_classifiers = {}
+        for k in self.leads:
+            l_classifier = init_class(config["lead_classifier"])
+            if not is_multioutput:
+                l_classifier = MultiOutputClassifier(l_classifier)
+            if setup_lead_pipeline_feature_selection:
+                l_classifier = Pipeline([
+                    (
+                        "feature_selection",
+                        SelectFromModel(
+                            init_class(setup_lead_pipeline_feature_selection)
+                        ),
+                    ),
+                    (
+                        "lead_classification",
+                        l_classifier,
+                    ),
+                ])
+            self.lead_classifiers[k] = l_classifier
+
         self.lead_classifier_name = config["lead_classifier"]["name"].split(".")[-1]
 
         for k, v in self.lead_classifiers.items():
             self.logger.info(f"{k}: {v}")
+            self.logger.info("same for other 11 leads...")
             break
         # initialize the meta classifiers (uses lead classifiers output as input)
         self.stack_classifier = init_class(config.get("stack_classifier"))
@@ -121,7 +136,7 @@ class ScikitLearnAgent(BaseAgent):
         for lead in self.leads:
             lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
         targets = np.stack(targets)
-        self.logger.info(f"Took {datetime.now() - start}\n")
+        self.logger.info(f"Took {datetime.now() - start}")
 
         # train each individual lead classifier
         stack_inputs = []
@@ -132,7 +147,7 @@ class ScikitLearnAgent(BaseAgent):
             )
             start = datetime.now()
             self.lead_classifiers[lead].fit(lead_inputs[lead], targets)
-            self.logger.info(f"Took {datetime.now() - start}\n")
+            self.logger.info(f"Took {datetime.now() - start}")
 
             try:
                 stack_input = self.lead_classifiers[lead].predict_proba(
@@ -153,18 +168,18 @@ class ScikitLearnAgent(BaseAgent):
         dim = dims.pop()
         if dim == 2:
             stack_inputs = np.concatenate(stack_inputs, axis=1)
-        elif dim  == 1:
+        elif dim == 1:
             stack_inputs = np.stack(stack_inputs).T
         shape = stack_inputs.shape
         self.logger.info(f"Fitting stack classifier on training data {shape}...")
         start = datetime.now()
         self.stack_classifier.fit(stack_inputs, targets)
-        self.logger.info(f"Took {datetime.now() - start}\n")
+        self.logger.info(f"Took {datetime.now() - start}")
 
         self.logger.info("Calculating scores on training data...")
         start = datetime.now()
         self.evaluate_and_log(lead_inputs, targets, mode="Training")
-        self.logger.info(f"Took {datetime.now() - start}\n")
+        self.logger.info(f"Took {datetime.now() - start}")
 
         self.logger.info("Preparing validation data...")
         start = datetime.now()
@@ -174,15 +189,15 @@ class ScikitLearnAgent(BaseAgent):
         for lead in self.leads:
             lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
         targets = np.stack(targets)
-        self.logger.info(f"Took {datetime.now() - start}\n")
+        self.logger.info(f"Took {datetime.now() - start}")
 
         self.logger.info("Calculating scores on validation data...")
         start = datetime.now()
         self.evaluate_and_log(lead_inputs, targets, mode="Validation")
-        self.logger.info(f"Took {datetime.now() - start}\n")
+        self.logger.info(f"Took {datetime.now() - start}")
 
     def finalize(self):
-        return 
+        return
         # TODO: parameters do not actually correspond to classifier state, this needs to become pickle'd
 
         # classifiers = [("stack", self.stack_classifier), *self.lead_classifiers.items()]
@@ -221,7 +236,7 @@ class ScikitLearnAgent(BaseAgent):
         dim = dims.pop()
         if dim == 2:
             stack_inputs = np.concatenate(stack_inputs, axis=1)
-        elif dim  == 1:
+        elif dim == 1:
             stack_inputs = np.stack(stack_inputs).T
 
         outputs = self.stack_classifier.predict(stack_inputs)
@@ -262,7 +277,7 @@ class ScikitLearnAgent(BaseAgent):
             if not file_exists:
                 f.write(
                     "| Lead Classifier | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n"
-                  + "|-----------------|---------|----------|-----------|--------|--------|-------|-------|\n"
+                    + "|-----------------|---------|----------|-----------|--------|--------|-------|-------|\n"
                 )
             f.write(
                 f"| {self.lead_classifier_name} | {self.cv_tag}/{mode} | "
@@ -270,3 +285,19 @@ class ScikitLearnAgent(BaseAgent):
                 + f"{train_scores[2]:.4f} | {train_scores[3]:.4f} | "
                 + f"{train_scores[4]:.4f} | {train_scores[5]:.4f} |\n"
             )
+
+    def check_multioutput(self, classifier):
+        X = np.random.random((10, 50))
+        y = np.random.randint(2, size=(10, 9))
+
+        is_multioutput = True
+
+        try:
+            classifier.fit(X, y)
+            out = classifier.predict(X)
+            assert out.shape == (10, 9)
+            pass
+        except Exception as e:
+            self.logger.info("Wrapping in MultiOutputClassifier...")
+            is_multioutput = False
+        return is_multioutput
