@@ -75,7 +75,7 @@ def run_experiment(feat_selector, cls_idx, cls_config, val_offset):
         exp_name = f"PhysioNet2020/ScikitLearn-{feat_name}_Feature_Selection/{cls_name}-{cls_idx}/cv-{val_offset}"
     override = {
         "exp_name": exp_name,
-        "lead_classsifier": cls_config,
+        "lead_classifier": cls_config,
         "cross_validation": {"val_offset": val_offset},
     }
     if feat_selector:

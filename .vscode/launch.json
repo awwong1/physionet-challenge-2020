@@ -35,6 +35,14 @@
             "program": "${workspaceFolder}/main.py",
             "args": ["configs/scikit_learn/base.json"],
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python: scikit_learn/aggregate.json",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": ["configs/scikit_learn/aggregate.json"],
+            "console": "integratedTerminal"
         }
     ]
 }
