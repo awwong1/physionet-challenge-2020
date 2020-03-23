@@ -171,3 +171,92 @@ sklearn.linear_model.SGDClassifier
 sklearn.linear_model.Perceptron
 sklearn.linear_model.PassiveAggressiveClassifier
 ```
+
+## Errors
+
+TODO: clean up experiment runs code
+
+LinearSVC: very sloooow. Unlikely to be a candidate model.
+
+```text
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/svm/_base.py:947: Converge$
+ceWarning: Liblinear failed to converge, increase the number of iterations.
+  "the number of iterations.", ConvergenceWarning)
+...
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/svm/_base.py:947: Convergen
+ceWarning: Liblinear failed to converge, increase the number of iterations.
+  "the number of iterations.", ConvergenceWarning)
+[INFO]: Took 0:32:36.466003
+```
+
+LogisticRegression & LogisticRegressionCV: default settings do not converge per lead
+```text
+[INFO]: Fitting lead I classifier on training data (5501, 484)...
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/linear_model/_logistic.py:9
+40: ConvergenceWarning: lbfgs failed to converge (status=1):
+STOP: TOTAL NO. of ITERATIONS REACHED LIMIT.
+
+Increase the number of iterations (max_iter) or scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+Please also refer to the documentation for alternative solver options:
+    https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression
+  extra_warning_msg=_LOGISTIC_SOLVER_CONVERGENCE_MSG)
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/linear_model/_logistic.py:9
+40: ConvergenceWarning: lbfgs failed to converge (status=1):
+STOP: TOTAL NO. of ITERATIONS REACHED LIMIT.
+```
+
+QuadraticDiscriminantAnalysis
+```text
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/discriminant_analysis.py:69
+1: UserWarning: Variables are collinear
+  warnings.warn("Variables are collinear")
+```
+
+RidgeClassifier
+```text
+/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/linear_model/_ridge.py:148:
+ LinAlgWarning: Ill-conditioned matrix (rcond=1.6382e-17): result may not be accurate.                                               
+  overwrite_a=True).T
+```
+
+NuSVC
+```text
+Traceback (most recent call last):                                                                                                   
+  File "main.py", line 27, in main                                                                                                   
+    agent.run()                                                                                                                      
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/agents/scikit_learn.py", line 149, in run                   
+    self.lead_classifiers[lead].fit(lead_inputs[lead], targets)                                                                      
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/multioutput.py", li
+ne 359, in fit                                                                                                                       
+    super().fit(X, Y, sample_weight)                                                                                                 
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/multioutput.py", li
+ne 170, in fit                                                                                                                       
+    for i in range(y.shape[1]))                                                                                                      
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/parallel.py", line 9
+21, in __call__                                                                                                                      
+    if self.dispatch_one_batch(iterator):                                                                                            
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/parallel.py", line 7
+59, in dispatch_one_batch                                                                                                            
+    self._dispatch(tasks)                                                                                                            
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/parallel.py", line 7
+16, in _dispatch                                                                                                                     
+    job = self._backend.apply_async(batch, callback=cb)                                                                              
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/_parallel_backends.p
+y", line 182, in apply_async                                                                                                         
+    result = ImmediateResult(func)                                                                                                   
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/_parallel_backends.py", line 549, in __init__
+    self.results = batch()
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/parallel.py", line $25, in __call__
+    for func, args, kwargs in self.items]
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/joblib/parallel.py", line $25, in <listcomp>
+    for func, args, kwargs in self.items]
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/multioutput.py", l$ne 40, in _fit_estimator
+    estimator.fit(X, y)
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/svm/_base.py", lin$ 199, in fit
+    fit(X, y, sample_weight, solver_type, kernel, random_seed=seed)                                                                 
+  File "/home/alex/sandbox/src/git.udia.ca/alex/physionet-challenge-2020/venv/lib/python3.6/site-packages/sklearn/svm/_base.py", lin$ 258, in _dense_fit
+    max_iter=self.max_iter, random_seed=random_seed)
+  File "sklearn/svm/_libsvm.pyx", line 191, in sklearn.svm._libsvm.fit                                                              
+ValueError: specified nu is infeasible
+```
