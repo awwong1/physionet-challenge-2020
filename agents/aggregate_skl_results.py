@@ -10,7 +10,7 @@ from . import BaseAgent
 class ScikitLearnResultsAgent(BaseAgent):
     HEAD = "| Lead Classifier | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |"
     SEPR = "|-----------------|---------|----------|-----------|--------|--------|-------|-------|"
-    REGEX = "\| (?P<lead_classifier>[\w-]+) \| (?P<dataset>[\w\-\/]+) \| (?P<accuracy>[\d\.]+) \| (?P<f_measure>[\d\.]+) \| (?P<f_beta>[\d\.]+) \| (?P<g_beta>[\d\.]+) \| (?P<auroc>[\d\.]+) \| (?P<auprc>[\d\.]+) \|"
+    REGEX = r"\| (?P<lead_classifier>[\w-]+) \| (?P<dataset>[\w\-\/]+) \| (?P<accuracy>[\d\.]+) \| (?P<f_measure>[\d\.]+) \| (?P<f_beta>[\d\.]+) \| (?P<g_beta>[\d\.]+) \| (?P<auroc>[\d\.]+) \| (?P<auprc>[\d\.]+) \|"
     RES = "| Lead Classifier | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |"
     SEP2 = "|-----------------|----------|-----------|--------|--------|-------|-------|"
 
@@ -21,16 +21,17 @@ class ScikitLearnResultsAgent(BaseAgent):
 
     def run(self):
         outputs = [self.HEAD, self.SEPR]
-        idx = -1
         for score_fp in self.score_fps:
+            # gross way to get the name, wip
+            name = score_fp.split("/")[3]
+
             with open(score_fp, "r") as f:
-                new_lines = [fl.strip()[2:]
+                new_lines = [[flc.strip() for flc in fl.split("|") if flc.strip()]
                     for fl in f.readlines()
                     if fl.strip() not in (self.HEAD, self.SEPR)]
-                if all("cv5-0/" in newline for newline in new_lines):
-                    idx += 1
+                
                 new_rows = [
-                    "| " + str(idx) + "-" + newline
+                    "| " + " | ".join([name,] + newline[1:]) + " |"
                     for newline in new_lines
                 ]
                 outputs.extend(new_rows)
