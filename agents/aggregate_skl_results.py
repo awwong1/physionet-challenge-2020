@@ -47,11 +47,15 @@ class ScikitLearnResultsAgent(BaseAgent):
 
             # dataset = s.group("dataset")
             accuracy = float(s.group("accuracy"))
+            dataset = s.group("dataset")
             f_measure = float(s.group("f_measure"))
             f_beta = float(s.group("f_beta"))
             g_beta = float(s.group("g_beta"))
             auroc = float(s.group("auroc"))
             auprc = float(s.group("auprc"))
+
+            if "Training" in dataset:
+                continue
 
             data = np.array((accuracy, f_measure, f_beta, g_beta, auroc, auprc))
 
