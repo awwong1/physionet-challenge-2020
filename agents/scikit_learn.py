@@ -221,11 +221,11 @@ class ScikitLearnAgent(BaseAgent):
         if self.serialize_model:
             lc_fp = os.path.join(self.output_dir, "lead_classifiers.pkl")
             with open(lc_fp, "wb") as f:
-                pickle.dump(self.lead_classifiers)
+                pickle.dump(self.lead_classifiers, f)
             self.logger.info(f"Saved lead classifiers to: {lc_fp}")
             sc_fp = os.path.join(self.output_dir, "stack_classifier.pkl")
             with open(sc_fp, "wb") as f:
-                pickle.dump(self.stack_classifier)
+                pickle.dump(self.stack_classifier, f)
             self.logger.info(f"saved stack classifier to: {sc_fp}")
 
         # TODO: parameters do not actually correspond to classifier state, this needs to become pickle'd

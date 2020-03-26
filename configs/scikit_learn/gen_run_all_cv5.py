@@ -69,14 +69,14 @@ FEATURE_SELECTION = (
 
 def run_experiment(feat_selector, cls_idx, cls_config, val_offset):
     cls_name = cls_config["name"].split(".")[-1]
-    exp_name = f"PhysioNet2020/ScikitLearn/{cls_idx:02}-{cls_name}/cv-{val_offset}"
+    exp_name = f"PhysioNet2020/ScikitLearn/{cls_idx:02}-{cls_name}/cv5-{val_offset}"
     if feat_selector:
         feat_name = feat_selector["name"].split(".")[-1]
-        exp_name = f"PhysioNet2020/ScikitLearn-{feat_name}_Feature_Selection/{cls_idx:02}-{cls_name}/cv-{val_offset}"
+        exp_name = f"PhysioNet2020/ScikitLearn-{feat_name}_Feature_Selection/{cls_idx:02}-{cls_name}/cv5-{val_offset}"
     override = {
         "exp_name": exp_name,
         "lead_classifier": cls_config,
-        "cross_validation": {"val_offset": val_offset},
+        "cross_validation": {"fold": 5, "val_offset": val_offset},
         "serialize_model": False
     }
     if feat_selector:
