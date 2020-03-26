@@ -77,6 +77,7 @@ def run_experiment(feat_selector, cls_idx, cls_config, val_offset):
         "exp_name": exp_name,
         "lead_classifier": cls_config,
         "cross_validation": {"val_offset": val_offset},
+        "serialize_model": False
     }
     if feat_selector:
         override["lead_pipeline_feature_selection"] = feat_selector

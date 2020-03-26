@@ -256,7 +256,7 @@ class PhysioNet2020Dataset(Dataset):
         ), f"val_offset must be between [0, {fold}), got {val_offset}"
         record_names = sorted(
             [
-                f[:-4]
+                f[:-len(endswith)]
                 for f in os.listdir(data_dir)
                 if (
                     os.path.isfile(os.path.join(data_dir, f))

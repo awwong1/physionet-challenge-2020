@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 from datetime import datetime
 
 import numpy as np
@@ -23,23 +24,23 @@ class ScikitLearnAgent(BaseAgent):
     All classifiers must support multilabel
     """
 
+    LEADS = (
+        "I",
+        "II",
+        "III",
+        "aVR",
+        "aVL",
+        "aVF",
+        "V1",
+        "V2",
+        "V3",
+        "V4",
+        "V5",
+        "V6",
+    )
+
     def __init__(self, config):
         super(ScikitLearnAgent, self).__init__(config)
-
-        self.leads = (
-            "I",
-            "II",
-            "III",
-            "aVR",
-            "aVL",
-            "aVF",
-            "V1",
-            "V2",
-            "V3",
-            "V4",
-            "V5",
-            "V6",
-        )
 
         # Initialize cross validation datasets
         self.data_dir = config.get(
@@ -48,11 +49,28 @@ class ScikitLearnAgent(BaseAgent):
         self.output_dir = config["out_dir"]
         cross_validation = config.get("cross_validation", None)
 
-        train_records, val_records = PhysioNet2020Dataset.split_names_cv(
-            self.data_dir, endswith=".npz", **cross_validation
-        )
+        self.serialize_model = config.get("serialize_model", False)
 
-        self.cv_tag = "cv{fold}-{val_offset}".format(**cross_validation)
+        if cross_validation:
+            train_records, val_records = PhysioNet2020Dataset.split_names_cv(
+                self.data_dir, endswith=".npz", **cross_validation
+            )
+
+            self.cv_tag = "cv{fold}-{val_offset}".format(**cross_validation)
+        else:
+            train_records = sorted(
+                [
+                    f[:-4]
+                    for f in os.listdir(self.data_dir)
+                    if (
+                        os.path.isfile(os.path.join(self.data_dir, f))
+                        and not f.lower().startswith(".")
+                        and f.lower().endswith(".npz")
+                    )
+                ]
+            )
+            val_records = []
+            self.cv_tag = "no-cv"
 
         self.logger.info(
             "Training on %d records (%s, ..., %s)",
@@ -60,12 +78,15 @@ class ScikitLearnAgent(BaseAgent):
             train_records[0],
             train_records[-1],
         )
-        self.logger.info(
-            "Validating on %d records (%s, ..., %s)",
-            len(val_records),
-            val_records[0],
-            val_records[-1],
-        )
+        if val_records:
+            self.logger.info(
+                "Validating on %d records (%s, ..., %s)",
+                len(val_records),
+                val_records[0],
+                val_records[-1],
+            )
+        else:
+            self.logger.info("No validation records")
         self.train_records = train_records
         self.val_records = val_records
 
@@ -77,23 +98,22 @@ class ScikitLearnAgent(BaseAgent):
         is_multioutput = self.check_multioutput(init_class(config["lead_classifier"]))
 
         self.lead_classifiers = {}
-        for k in self.leads:
+        for k in ScikitLearnAgent.LEADS:
             l_classifier = init_class(config["lead_classifier"])
             if not is_multioutput:
                 l_classifier = MultiOutputClassifier(l_classifier)
             if setup_lead_pipeline_feature_selection:
-                l_classifier = Pipeline([
-                    (
-                        "feature_selection",
-                        SelectFromModel(
-                            init_class(setup_lead_pipeline_feature_selection)
+                l_classifier = Pipeline(
+                    [
+                        (
+                            "feature_selection",
+                            SelectFromModel(
+                                init_class(setup_lead_pipeline_feature_selection)
+                            ),
                         ),
-                    ),
-                    (
-                        "lead_classification",
-                        l_classifier,
-                    ),
-                ])
+                        ("lead_classification", l_classifier,),
+                    ]
+                )
             self.lead_classifiers[k] = l_classifier
 
         self.lead_classifier_name = config["lead_classifier"]["name"].split(".")[-1]
@@ -133,14 +153,14 @@ class ScikitLearnAgent(BaseAgent):
         train_data = map(load_data_cache, self.train_records)
         inputs, targets = zip(*train_data)
         lead_inputs = {}
-        for lead in self.leads:
+        for lead in ScikitLearnAgent.LEADS:
             lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
         targets = np.stack(targets)
         self.logger.info(f"Took {datetime.now() - start}")
 
         # train each individual lead classifier
         stack_inputs = []
-        for lead in self.leads:
+        for lead in ScikitLearnAgent.LEADS:
             shape = lead_inputs[lead].shape
             self.logger.info(
                 f"Fitting lead {lead} classifier on training data {shape}..."
@@ -181,23 +201,33 @@ class ScikitLearnAgent(BaseAgent):
         self.evaluate_and_log(lead_inputs, targets, mode="Training")
         self.logger.info(f"Took {datetime.now() - start}")
 
-        self.logger.info("Preparing validation data...")
-        start = datetime.now()
-        data = map(load_data_cache, self.val_records)
-        inputs, targets = zip(*data)
-        lead_inputs = {}
-        for lead in self.leads:
-            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
-        targets = np.stack(targets)
-        self.logger.info(f"Took {datetime.now() - start}")
+        if self.val_records:
+            self.logger.info("Preparing validation data...")
+            start = datetime.now()
+            data = map(load_data_cache, self.val_records)
+            inputs, targets = zip(*data)
+            lead_inputs = {}
+            for lead in ScikitLearnAgent.LEADS:
+                lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
+            targets = np.stack(targets)
+            self.logger.info(f"Took {datetime.now() - start}")
 
-        self.logger.info("Calculating scores on validation data...")
-        start = datetime.now()
-        self.evaluate_and_log(lead_inputs, targets, mode="Validation")
-        self.logger.info(f"Took {datetime.now() - start}")
+            self.logger.info("Calculating scores on validation data...")
+            start = datetime.now()
+            self.evaluate_and_log(lead_inputs, targets, mode="Validation")
+            self.logger.info(f"Took {datetime.now() - start}")
 
     def finalize(self):
-        return
+        if self.serialize_model:
+            lc_fp = os.path.join(self.output_dir, "lead_classifiers.pkl")
+            with open(lc_fp, "wb") as f:
+                pickle.dump(self.lead_classifiers)
+            self.logger.info(f"Saved lead classifiers to: {lc_fp}")
+            sc_fp = os.path.join(self.output_dir, "stack_classifier.pkl")
+            with open(sc_fp, "wb") as f:
+                pickle.dump(self.stack_classifier)
+            self.logger.info(f"saved stack classifier to: {sc_fp}")
+
         # TODO: parameters do not actually correspond to classifier state, this needs to become pickle'd
 
         # classifiers = [("stack", self.stack_classifier), *self.lead_classifiers.items()]
@@ -215,9 +245,12 @@ class ScikitLearnAgent(BaseAgent):
         #         self.logger.info(f"Saved classifier parameters to {wp}")
 
     def evaluate_and_log(self, lead_inputs, targets, mode="Training"):
+        if not lead_inputs:
+            return
+
         # evaluate each individual lead classifier
         stack_inputs = []
-        for lead in self.leads:
+        for lead in ScikitLearnAgent.LEADS:
             try:
                 stack_input = self.lead_classifiers[lead].predict_proba(
                     lead_inputs[lead]
