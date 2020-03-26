@@ -1,9 +1,9 @@
 {
-  "exp_name": "PhysioNet2020/Scikit_Learn/GradientBoostingClassifier/cv5-5",
+  "exp_name": "PhysioNet2020/Scikit_Learn/GradientBoostingClassifier/no-cv",
   "agent": "agents.scikit_learn.ScikitLearnAgent",
   "data_dir": "experiments/PhysioNet2020/FeatureExtraction/out",
   "lead_classifier": {
-    "name": "sklearn.ensemble.GradientBoostingClassifier"
+    "name": "sklearn.ensemble.GradientBoostingClassifier",
   },
   "stack_classifier": {
     "name": "sklearn.ensemble.RandomForestClassifier"
