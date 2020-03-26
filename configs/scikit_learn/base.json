@@ -1,15 +1,12 @@
 {
-  "exp_name": "PhysioNet2020/Scikit_Learn/base/cv-0",
+  "exp_name": "PhysioNet2020/Scikit_Learn/GradientBoostingClassifier/no-cv",
   "agent": "agents.scikit_learn.ScikitLearnAgent",
   "data_dir": "experiments/PhysioNet2020/FeatureExtraction/out",
-  "cross_validation": {
-    "fold": 5,
-    "val_offset": 0
-  },
   "lead_classifier": {
-    "name": "sklearn.linear_model.PassiveAggressiveClassifier"
+    "name": "sklearn.ensemble.GradientBoostingClassifier",
   },
   "stack_classifier": {
     "name": "sklearn.ensemble.RandomForestClassifier"
-  }
+  },
+  "serialize_model": true
 }

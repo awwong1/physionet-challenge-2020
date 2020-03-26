@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Python: debug_simple_cnn.json",
             "type": "python",
@@ -43,6 +44,13 @@
             "program": "${workspaceFolder}/main.py",
             "args": ["configs/scikit_learn/aggregate.json"],
             "console": "integratedTerminal"
-        }
+        },
+        {
+            "name": "Python: gradient_boosting_run_12ECG_classifier.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/gradient_boosting_run_12ECG_classifier.py",
+            "console": "integratedTerminal"
+        },
     ]
 }
