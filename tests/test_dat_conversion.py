@@ -1,8 +1,12 @@
 import os
 import unittest
+from tempfile import TemporaryDirectory
+
+from wfdb.io import rdrecord
+
 from driver import load_challenge_data
 from util.sigdat import write_wfdb_sample
-from wfdb.io import rdrecord
+
 
 class DatConversionTest(unittest.TestCase):
     def setUp(self):
@@ -37,5 +41,10 @@ class DatConversionTest(unittest.TestCase):
         tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
 
         data, headers = load_challenge_data(tmp_input_file)
-        write_wfdb_sample(data, headers)
-        pass
+
+        with TemporaryDirectory() as temp_dir:
+            write_wfdb_sample(data, headers, write_dir=temp_dir)
+            self.assertCountEqual(os.listdir(temp_dir), ['A0001.dat', 'A0001.hea'])
+
+        self.assertFalse(os.path.isdir(temp_dir), "temp dir not cleaned up")
+

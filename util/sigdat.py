@@ -28,23 +28,6 @@ def write_wfdb_sample(data, header_data, write_dir=""):
     # Set the comments field
     comments = [line.strip(" \t#") for line in comment_lines]
 
-    # wrsamp(
-    #     record_fields.get("record_name", "A000"),
-    #     record_fields.get("fs", 500),
-    #     signal_fields.get("units", ["mV",] * 12),
-    #     signal_fields.get(
-    #         "sig_name",
-    #         ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"],
-    #     ),
-    #     p_signal=data.T,
-    #     fmt=signal_fields.get("fmt", None),
-    #     # fmt=["16",] * 12,
-    #     adc_gain=signal_fields.get("adc_gain", None),
-    #     baseline=signal_fields.get("baseline", None),
-    #     comments=comments,
-    #     write_dir=write_dir
-    # )
-
     file_names = signal_fields.get("file_name")
     if file_names:
         for idx, fn in enumerate(file_names):
@@ -77,4 +60,4 @@ def write_wfdb_sample(data, header_data, write_dir=""):
         sig_name=signal_fields.get("sig_name"),
         comments=comments
     )
-    r.wrsamp()
+    r.wrsamp(write_dir=write_dir)
