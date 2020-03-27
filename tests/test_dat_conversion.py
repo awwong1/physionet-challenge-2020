@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from wfdb.io import rdrecord
 
 from driver import load_challenge_data
-from util.sigdat import write_wfdb_sample
+from util.sigdat import convert_to_wfdb_record, extract_features
 
 
 class DatConversionTest(unittest.TestCase):
@@ -43,8 +43,15 @@ class DatConversionTest(unittest.TestCase):
         data, headers = load_challenge_data(tmp_input_file)
 
         with TemporaryDirectory() as temp_dir:
-            write_wfdb_sample(data, headers, write_dir=temp_dir)
+            r = convert_to_wfdb_record(data, headers)
+            r.wrsamp(write_dir=temp_dir)
             self.assertCountEqual(os.listdir(temp_dir), ['A0001.dat', 'A0001.hea'])
 
         self.assertFalse(os.path.isdir(temp_dir), "temp dir not cleaned up")
 
+    def test_extract_features(self):
+        tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
+        data, headers = load_challenge_data(tmp_input_file)
+        r = convert_to_wfdb_record(data, headers)
+
+        features = extract_features(r)
