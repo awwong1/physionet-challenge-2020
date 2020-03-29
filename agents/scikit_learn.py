@@ -132,18 +132,18 @@ class ScikitLearnAgent(BaseAgent):
             data = np.load(fp)
             return (
                 {
-                    "I": data["I"],
-                    "II": data["II"],
-                    "III": data["III"],
-                    "aVR": data["aVR"],
-                    "aVL": data["aVL"],
-                    "aVF": data["aVF"],
-                    "V1": data["V1"],
-                    "V2": data["V2"],
-                    "V3": data["V3"],
-                    "V4": data["V4"],
-                    "V5": data["V5"],
-                    "V6": data["V6"],
+                    "I": data.get("I", None),
+                    "II": data.get("II", None),
+                    "III": data.get("III", None),
+                    "aVR": data.get("aVR", None),
+                    "aVL": data.get("aVL", None),
+                    "aVF": data.get("aVF", None),
+                    "V1": data.get("V1", None),
+                    "V2": data.get("V2", None),
+                    "V3": data.get("V3", None),
+                    "V4": data.get("V4", None),
+                    "V5": data.get("V5", None),
+                    "V6": data.get("V6", None),
                 },
                 data["target"],
             )
@@ -154,7 +154,7 @@ class ScikitLearnAgent(BaseAgent):
         inputs, targets = zip(*train_data)
         lead_inputs = {}
         for lead in ScikitLearnAgent.LEADS:
-            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
+            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs if inp))
         targets = np.stack(targets)
         self.logger.info(f"Took {datetime.now() - start}")
 
