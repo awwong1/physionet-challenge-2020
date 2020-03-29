@@ -44,8 +44,9 @@ class DatConversionTest(unittest.TestCase):
 
         with TemporaryDirectory() as temp_dir:
             r = convert_to_wfdb_record(data, headers)
+            r.adc(inplace=True)
             r.wrsamp(write_dir=temp_dir)
-            self.assertCountEqual(os.listdir(temp_dir), ['A0001.dat', 'A0001.hea'])
+            self.assertCountEqual(os.listdir(temp_dir), ["A0001.dat", "A0001.hea"])
 
         self.assertFalse(os.path.isdir(temp_dir), "temp dir not cleaned up")
 
@@ -55,3 +56,24 @@ class DatConversionTest(unittest.TestCase):
         r = convert_to_wfdb_record(data, headers)
 
         features = extract_features(r)
+        self.assertCountEqual(features.keys(), ["age", "sex", "signal", "target"])
+        self.assertCountEqual(
+            features["signal"].keys(),
+            ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"],
+        )
+        for k, v in features["signal"].items():
+            self.assertCountEqual(
+                v.keys(),
+                [
+                    "R-peak",
+                    "P-peak",
+                    "T-peak",
+                    "HR",
+                    "P-wave",
+                    "R-wave",
+                    "T-wave",
+                    "PR-segment",
+                    "ST-segment",
+                    "FFT",
+                ],
+            )
