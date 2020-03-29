@@ -56,12 +56,12 @@ class DatConversionTest(unittest.TestCase):
         r = convert_to_wfdb_record(data, headers)
 
         features = extract_features(r)
-        self.assertCountEqual(features.keys(), ["age", "sex", "signal", "target"])
+        self.assertCountEqual(features.keys(), ["age", "sex", "sig", "target"])
         self.assertCountEqual(
-            features["signal"].keys(),
+            features["sig"].keys(),
             ["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"],
         )
-        for k, v in features["signal"].items():
+        for k, v in features["sig"].items():
             self.assertCountEqual(
                 v.keys(),
                 [

@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from driver import get_classes, load_challenge_data
 from util.sigproc import extract_record_features
+from util.sigdat import convert_to_wfdb_record, extract_features
 
 from . import BaseAgent
 
@@ -38,7 +39,9 @@ class FeatureExtractionAgent(BaseAgent):
             fp = os.path.join(self.input_directory, input_file)
             data, headers = load_challenge_data(fp)
 
-            features = extract_record_features(data, headers, **self.erf_options)
+            # features = extract_record_features(data, headers, **self.erf_options)
+            r = convert_to_wfdb_record(data, headers)
+            features = extract_features(r)
 
             sex = features.pop("sex")
             age = features.pop("age")

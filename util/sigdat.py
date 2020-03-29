@@ -116,7 +116,7 @@ def extract_features(r, check_errors=True):
                 # print(e)
                 pass
 
-    features["signal"] = signal_features
+    features["sig"] = signal_features
 
     return features
 
