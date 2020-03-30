@@ -127,94 +127,86 @@ class ScikitLearnAgent(BaseAgent):
         self.logger.info(f"stack: {self.stack_classifier}")
 
     def run(self):
-        def load_data_cache(train_record):
-            fp = os.path.join(self.data_dir, f"{train_record}.npz")
-            data = np.load(fp)
-            return (
-                {
-                    "I": data.get("I", None),
-                    "II": data.get("II", None),
-                    "III": data.get("III", None),
-                    "aVR": data.get("aVR", None),
-                    "aVL": data.get("aVL", None),
-                    "aVF": data.get("aVF", None),
-                    "V1": data.get("V1", None),
-                    "V2": data.get("V2", None),
-                    "V3": data.get("V3", None),
-                    "V4": data.get("V4", None),
-                    "V5": data.get("V5", None),
-                    "V6": data.get("V6", None),
-                },
-                data["target"],
-            )
+        lead_inputs, lead_targets, lead_keys = self.prepare_data(
+            self.train_records, mode="Training"
+        )
 
-        self.logger.info("Preparing training data...")
-        start = datetime.now()
-        train_data = map(load_data_cache, self.train_records)
-        inputs, targets = zip(*train_data)
-        lead_inputs = {}
-        for lead in ScikitLearnAgent.LEADS:
-            lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs if inp))
-        targets = np.stack(targets)
-        self.logger.info(f"Took {datetime.now() - start}")
-
-        # train each individual lead classifier
-        stack_inputs = []
+        stack_inputs = {}
         for lead in ScikitLearnAgent.LEADS:
             shape = lead_inputs[lead].shape
             self.logger.info(
                 f"Fitting lead {lead} classifier on training data {shape}..."
             )
             start = datetime.now()
-            self.lead_classifiers[lead].fit(lead_inputs[lead], targets)
+            self.lead_classifiers[lead].fit(lead_inputs[lead], lead_targets[lead])
             self.logger.info(f"Took {datetime.now() - start}")
 
+            self.logger.info(
+                f"Evaluating lead {lead} classifier on training data {shape}..."
+            )
+            start = datetime.now()
             try:
                 stack_input = self.lead_classifiers[lead].predict_proba(
                     lead_inputs[lead]
                 )
             except AttributeError as e:
                 stack_input = self.lead_classifiers[lead].predict(lead_inputs[lead])
-
             if type(stack_input) == list:
                 for idx in range(len(stack_input)):
                     stack_input[idx] = stack_input[idx][:, 1]
                 stack_input = np.stack(stack_input).T
-            stack_inputs.append(stack_input)
+            stack_inputs[lead] = stack_input
+            self.logger.info(f"Took {datetime.now() - start}")
 
-        # construct the data for the meta/stack classifier
-        dims = set([len(si.shape) for si in stack_inputs])
-        assert len(dims) == 1, "stack dimensions must be equal"
-        dim = dims.pop()
-        if dim == 2:
-            stack_inputs = np.concatenate(stack_inputs, axis=1)
-        elif dim == 1:
-            stack_inputs = np.stack(stack_inputs).T
-        shape = stack_inputs.shape
-        self.logger.info(f"Fitting stack classifier on training data {shape}...")
+        # construct the stack classifier inputs
+        stack_classifier_inputs = []
+        stack_classifier_targets = []
+        for idx in range(len(self.train_records)):
+            # if the index is in all lead keys, it can be used as input
+            missing_lead = False
+            lead_idxs = {}
+            for lead in self.LEADS:
+                try:
+                    lead_idxs[lead] = lead_keys[lead].index(idx)
+                except ValueError:
+                    missing_lead = True
+                    break
+
+            if missing_lead:
+                continue
+
+            stack_classifier_input = []
+            for lead, lead_idx in lead_idxs.items():
+                stack_classifier_input.append(stack_inputs[lead][lead_idx])
+                if lead == self.LEADS[0]:
+                    stack_classifier_targets.append(lead_targets[lead][lead_idx])
+            stack_classifier_input = np.concatenate(stack_classifier_input)
+            stack_classifier_inputs.append(stack_classifier_input)
+        stack_classifier_inputs = np.stack(stack_classifier_inputs, axis=0)
+        stack_classifier_targets = np.stack(stack_classifier_targets, axis=0)
+
+        self.logger.info(
+            f"Fitting stack classifier on training data {stack_classifier_inputs.shape}..."
+        )
         start = datetime.now()
-        self.stack_classifier.fit(stack_inputs, targets)
+        self.stack_classifier.fit(stack_classifier_inputs, stack_classifier_targets)
         self.logger.info(f"Took {datetime.now() - start}")
 
         self.logger.info("Calculating scores on training data...")
         start = datetime.now()
-        self.evaluate_and_log(lead_inputs, targets, mode="Training")
+        self.evaluate_and_log(lead_inputs, lead_targets, lead_keys, mode="Training")
         self.logger.info(f"Took {datetime.now() - start}")
 
         if self.val_records:
-            self.logger.info("Preparing validation data...")
-            start = datetime.now()
-            data = map(load_data_cache, self.val_records)
-            inputs, targets = zip(*data)
-            lead_inputs = {}
-            for lead in ScikitLearnAgent.LEADS:
-                lead_inputs[lead] = np.stack(tuple(inp[lead] for inp in inputs))
-            targets = np.stack(targets)
-            self.logger.info(f"Took {datetime.now() - start}")
+            lead_inputs, lead_targets, lead_keys = self.prepare_data(
+                self.val_records, mode="Validation"
+            )
 
             self.logger.info("Calculating scores on validation data...")
             start = datetime.now()
-            self.evaluate_and_log(lead_inputs, targets, mode="Validation")
+            self.evaluate_and_log(
+                lead_inputs, lead_targets, lead_keys, mode="Validation"
+            )
             self.logger.info(f"Took {datetime.now() - start}")
 
     def finalize(self):
@@ -228,28 +220,54 @@ class ScikitLearnAgent(BaseAgent):
                 pickle.dump(self.stack_classifier, f)
             self.logger.info(f"saved stack classifier to: {sc_fp}")
 
-        # TODO: parameters do not actually correspond to classifier state, this needs to become pickle'd
+    def prepare_data(self, records, mode="Training"):
+        self.logger.info(f"Preparing {mode} data...")
+        start = datetime.now()
+        train_data = map(self.load_data_cache, records)
+        inputs, targets = zip(*train_data)
 
-        # classifiers = [("stack", self.stack_classifier), *self.lead_classifiers.items()]
-        # for name, classifier in classifiers:
-        #     params = classifier.get_params()
-        #     try:
-        #         wp = os.path.join(self.output_dir, f"{name}_params.json")
-        #         with open(wp, "w") as f:
-        #             json.dump(params, f)
-        #             self.logger.info(f"Saved classifier parameters to {wp}")
-        #     except TypeError:
-        #         # TypeError: Object of type 'ndarray' is not JSON serializable
-        #         wp = os.path.join(self.output_dir, f"{name}_params.npy")
-        #         np.save(wp, params)
-        #         self.logger.info(f"Saved classifier parameters to {wp}")
+        lead_keys = {}
+        lead_inputs = {}
+        lead_targets = {}
+        for lead in ScikitLearnAgent.LEADS:
+            lead_key = []
+            lead_input = []
+            lead_target = []
+            for idx, inp in enumerate(inputs):
+                if inp[lead] is not None:
+                    lead_input.append(inp[lead])
+                    lead_target.append(targets[idx])
+                    lead_key.append(idx)
+            lead_inputs[lead] = np.stack(lead_input)
+            lead_targets[lead] = np.stack(lead_target)
+            lead_keys[lead] = tuple(lead_key)
+        self.logger.info(f"Took {datetime.now() - start}")
+        return lead_inputs, lead_targets, lead_keys
 
-    def evaluate_and_log(self, lead_inputs, targets, mode="Training"):
-        if not lead_inputs:
-            return
+    def load_data_cache(self, train_record):
+        fp = os.path.join(self.data_dir, f"{train_record}.npz")
+        data = np.load(fp)
+        return (
+            {
+                "I": data.get("I", None),
+                "II": data.get("II", None),
+                "III": data.get("III", None),
+                "aVR": data.get("aVR", None),
+                "aVL": data.get("aVL", None),
+                "aVF": data.get("aVF", None),
+                "V1": data.get("V1", None),
+                "V2": data.get("V2", None),
+                "V3": data.get("V3", None),
+                "V4": data.get("V4", None),
+                "V5": data.get("V5", None),
+                "V6": data.get("V6", None),
+            },
+            data["target"],
+        )
 
+    def evaluate_and_log(self, lead_inputs, lead_targets, lead_keys, mode="Training"):
         # evaluate each individual lead classifier
-        stack_inputs = []
+        stack_inputs = {}
         for lead in ScikitLearnAgent.LEADS:
             try:
                 stack_input = self.lead_classifiers[lead].predict_proba(
@@ -257,51 +275,131 @@ class ScikitLearnAgent(BaseAgent):
                 )
             except AttributeError as e:
                 stack_input = self.lead_classifiers[lead].predict(lead_inputs[lead])
-
             if type(stack_input) == list:
                 for idx in range(len(stack_input)):
                     stack_input[idx] = stack_input[idx][:, 1]
                 stack_input = np.stack(stack_input).T
-            stack_inputs.append(stack_input)
+            stack_inputs[lead] = stack_input
 
-        dims = set([len(si.shape) for si in stack_inputs])
-        assert len(dims) == 1, "stack dimensions must be equal"
-        dim = dims.pop()
-        if dim == 2:
-            stack_inputs = np.concatenate(stack_inputs, axis=1)
-        elif dim == 1:
-            stack_inputs = np.stack(stack_inputs).T
+        # construct the stack classifier inputs
+        stack_classifier_inputs = []
+        consensus_indicies = []
+        stack_indicies = []
+        for idx in range(len(self.train_records)):
+            # if the index is in all lead keys, it can be used as input
+            missing_lead = False
+            lead_idxs = {}
+            for lead in self.LEADS:
+                try:
+                    lead_idxs[lead] = lead_keys[lead].index(idx)
+                except ValueError:
+                    missing_lead = True
+                    break
 
-        outputs = self.stack_classifier.predict(stack_inputs)
+            if missing_lead:
+                consensus_indicies.append(idx)
+                continue
+            else:
+                stack_indicies.append(idx)
 
-        # if output shape is not two dimensional, expand
-        if len(outputs.shape) == 1:
-            lb = LabelBinarizer()
-            lb.fit(outputs)
-            outputs = lb.transform(outputs)
+            stack_classifier_input = []
+            for lead, lead_idx in lead_idxs.items():
+                stack_classifier_input.append(stack_inputs[lead][lead_idx])
+            stack_classifier_input = np.concatenate(stack_classifier_input)
+            stack_classifier_inputs.append(stack_classifier_input)
+        stack_classifier_inputs = np.stack(stack_classifier_inputs, axis=0)
 
+        # Get the stack outputs and stack probabilities
+        stack_outputs = self.stack_classifier.predict(stack_classifier_inputs)
         try:
-            probabilities = self.stack_classifier.predict_proba(stack_inputs)
+            stack_probabilities = np.stack(
+                [
+                    tup[:, 1]
+                    for tup in self.stack_classifier.predict_proba(
+                        stack_classifier_inputs
+                    )
+                ],
+                axis=1,
+            )
         except AttributeError as e:
-            probabilities = outputs.astype(np.float)
+            stack_probabilities = stack_outputs.astype(np.float)
 
-        if type(probabilities) == list:
-            for idx in range(len(probabilities)):
-                probabilities[idx] = probabilities[idx][:, 1]
-            probabilities = np.stack(probabilities).T
+        # handle all missing lead indicies as average/consensus of the leads
+        lead_outputs = []
+        lead_probabilities = []
+        for consensus_idx in consensus_indicies:
+            lead_output = []
+            lead_probability = []
+            for lead in self.LEADS:
+                if consensus_idx in lead_keys[lead]:
+                    lead_idx = lead_keys[lead].index(consensus_idx)
+                    lead_output.append(
+                        self.lead_classifiers[lead].predict(
+                            np.reshape(lead_inputs[lead][lead_idx], (1, -1))
+                        )
+                    )
+                    lead_probability.append(
+                        np.concatenate(
+                            [
+                                tup[:, 1]
+                                for tup in self.lead_classifiers[lead].predict_proba(
+                                    np.reshape(lead_inputs[lead][lead_idx], (1, -1))
+                                )
+                            ]
+                        )
+                    )
 
-        num_inputs, _ = stack_inputs.shape
-        train_scores = np.zeros((num_inputs, 6))
+            # average the probabilities, consensus the lead_outputs (90% choose, mark as 1)
+            lead_probabilities.append(np.mean(lead_probability, axis=0).flatten())
+            # if all zeros, default to RBBB
+            votes = np.sum(lead_output, axis=0)
+            if np.max(votes) > 0:
+                lead_outputs.append(
+                    (votes / (0.9 * np.max(votes)) >= 1).astype(int).flatten()
+                )
+            else:
+                # ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
+                stub = np.zeros(9)
+                stub[6] = 1
+                stub = stub.astype(int)
+                lead_outputs.append(stub)
+
+        # merge the stack and lead values together
+        outputs = []
+        probabilities = []
+        targets = []
+        for idx in range(len(self.train_records)):
+            if idx in stack_indicies:
+                s_idx = stack_indicies.index(idx)
+                outputs.append(stack_outputs[s_idx])
+                probabilities.append(stack_probabilities[s_idx])
+            else:
+                # kludge in the consensus values
+                c_idx = consensus_indicies.index(idx)
+                outputs.append(lead_outputs[c_idx])
+                probabilities.append(lead_probabilities[c_idx])
+
+            # append in the target values
+            for lead in self.LEADS:
+                if idx in lead_keys[lead]:
+                    l_idx = lead_keys[lead].index(idx)
+                    targets.append(lead_targets[lead][l_idx])
+                    break
+
+        outputs = np.stack(outputs)
+        probabilities = np.stack(probabilities)
+        targets = np.stack(targets)
+
         # accuracy, f_measure, f_beta, g_beta
         beta_score = compute_beta_score(targets, outputs)
         # auroc, auprc
         auc_score = compute_auc(targets, probabilities)
-        train_scores = np.array(beta_score + auc_score)
+        scores = np.array(beta_score + auc_score)
         self.logger.info(f"{self.cv_tag}/{mode} mean scores:")
         self.logger.info(
-            f"acc: {train_scores[0]} | f_measure: {train_scores[1]} | "
-            + f"f_beta: {train_scores[2]} | g_beta: {train_scores[3]} | "
-            + f"auroc: {train_scores[4]} | auprc: {train_scores[5]} "
+            f"acc: {scores[0]} | f_measure: {scores[1]} | "
+            + f"f_beta: {scores[2]} | g_beta: {scores[3]} | "
+            + f"auroc: {scores[4]} | auprc: {scores[5]} "
         )
 
         wp = os.path.join(self.output_dir, "scores.txt")
@@ -314,9 +412,9 @@ class ScikitLearnAgent(BaseAgent):
                 )
             f.write(
                 f"| {self.lead_classifier_name} | {self.cv_tag}/{mode} | "
-                + f"{train_scores[0]:.4f} | {train_scores[1]:.4f} | "
-                + f"{train_scores[2]:.4f} | {train_scores[3]:.4f} | "
-                + f"{train_scores[4]:.4f} | {train_scores[5]:.4f} |\n"
+                + f"{scores[0]:.4f} | {scores[1]:.4f} | "
+                + f"{scores[2]:.4f} | {scores[3]:.4f} | "
+                + f"{scores[4]:.4f} | {scores[5]:.4f} |\n"
             )
 
     def check_multioutput(self, classifier):
