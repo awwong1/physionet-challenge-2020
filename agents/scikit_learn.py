@@ -285,7 +285,11 @@ class ScikitLearnAgent(BaseAgent):
         stack_classifier_inputs = []
         consensus_indicies = []
         stack_indicies = []
-        for idx in range(len(self.train_records)):
+
+        records = self.train_records
+        if mode != "Training":
+            records = self.val_records
+        for idx in range(len(records)):
             # if the index is in all lead keys, it can be used as input
             missing_lead = False
             lead_idxs = {}
@@ -368,7 +372,7 @@ class ScikitLearnAgent(BaseAgent):
         outputs = []
         probabilities = []
         targets = []
-        for idx in range(len(self.train_records)):
+        for idx in range(len(records)):
             if idx in stack_indicies:
                 s_idx = stack_indicies.index(idx)
                 outputs.append(stack_outputs[s_idx].flatten())
