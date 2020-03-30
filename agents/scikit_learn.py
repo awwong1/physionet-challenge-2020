@@ -371,19 +371,19 @@ class ScikitLearnAgent(BaseAgent):
         for idx in range(len(self.train_records)):
             if idx in stack_indicies:
                 s_idx = stack_indicies.index(idx)
-                outputs.append(stack_outputs[s_idx])
-                probabilities.append(stack_probabilities[s_idx])
+                outputs.append(stack_outputs[s_idx].flatten())
+                probabilities.append(stack_probabilities[s_idx].flatten())
             else:
                 # kludge in the consensus values
                 c_idx = consensus_indicies.index(idx)
-                outputs.append(lead_outputs[c_idx])
-                probabilities.append(lead_probabilities[c_idx])
+                outputs.append(lead_outputs[c_idx].flatten())
+                probabilities.append(lead_probabilities[c_idx].flatten())
 
             # append in the target values
             for lead in self.LEADS:
                 if idx in lead_keys[lead]:
                     l_idx = lead_keys[lead].index(idx)
-                    targets.append(lead_targets[lead][l_idx])
+                    targets.append(lead_targets[lead][l_idx].flatten())
                     break
 
         outputs = np.stack(outputs)
