@@ -342,16 +342,25 @@ class ScikitLearnAgent(BaseAgent):
                             np.reshape(lead_inputs[lead][lead_idx], (1, -1))
                         )
                     )
-                    lead_probability.append(
-                        np.concatenate(
-                            [
-                                tup[:, 1]
-                                for tup in self.lead_classifiers[lead].predict_proba(
-                                    np.reshape(lead_inputs[lead][lead_idx], (1, -1))
-                                )
-                            ]
+                    try:
+                        lead_probability.append(
+                            np.concatenate(
+                                [
+                                    tup[:, 1]
+                                    for tup in self.lead_classifiers[
+                                        lead
+                                    ].predict_proba(
+                                        np.reshape(lead_inputs[lead][lead_idx], (1, -1))
+                                    )
+                                ]
+                            )
                         )
-                    )
+                    except AttributeError:
+                        lead_probability.append(
+                            self.lead_classifiers[lead].predict(
+                                np.reshape(lead_inputs[lead][lead_idx], (1, -1))
+                            )
+                        )
 
             # average the probabilities, consensus the lead_outputs (90% choose, mark as 1)
             lead_probabilities.append(np.mean(lead_probability, axis=0).flatten())
@@ -389,6 +398,8 @@ class ScikitLearnAgent(BaseAgent):
                     l_idx = lead_keys[lead].index(idx)
                     targets.append(lead_targets[lead][l_idx].flatten())
                     break
+
+        
 
         outputs = np.stack(outputs)
         probabilities = np.stack(probabilities)
