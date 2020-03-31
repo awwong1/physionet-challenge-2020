@@ -77,7 +77,7 @@ def convert_to_wfdb_record(data, header_data):
     return r
 
 
-def extract_features(r, check_errors=True):
+def extract_features(r, check_errors=False):
     """
     Given a wfdb.io.Record, extract relevant features for classifier by signal name
     """
