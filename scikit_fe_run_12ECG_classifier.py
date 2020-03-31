@@ -74,7 +74,7 @@ def run_12ECG_classifier(data, header_data, classes, model):
             for idx in range(len(probabilities)):
                 probabilities[idx] = probabilities[idx][:, 1]
             probabilities = np.stack(probabilities).T
-        outputs = stack_classifier.predict(stack_classifier_input)
+        outputs = stack_classifier.predict(stack_classifier_input).astype(int)
     else:
         # use consensus among lead outputs
         probabilities = np.mean(np.stack(list(a.flatten() for a in lead_probabilities.values())), axis=0)
