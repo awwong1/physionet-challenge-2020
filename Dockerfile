@@ -26,7 +26,7 @@ RUN tar -xvf experiments/PhysioNet2020/Scikit_Learn/ecgpuwave-GradientBoostingCl
 COPY scikit_fe_run_12ECG_classifier.py run_12ECG_classifier.py
 
 # ecgpuwave build and installation
-RUN apt-get update && apt-get install -y gfortran gcc libcurl4-openssl-dev
+RUN apt-get update && apt-get install -y make gfortran gcc libcurl4-openssl-dev
 WORKDIR /physionet/wfdb-10.6.2
 RUN ./configure
 RUN make install
