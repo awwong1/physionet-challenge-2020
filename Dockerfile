@@ -36,7 +36,7 @@ RUN ./configure
 RUN make install
 WORKDIR /physionet/ecgpuwave-1.3.4
 RUN make install
-
+WORKDIR /physionet
 # WORKDIR /physionet/ecgpuwave-1.3.4
 # RUN make install
 # WORKDIR /physionet
