@@ -66,7 +66,9 @@ def run_12ECG_classifier(data, header_data, classes, model):
     # construct the stack classifier inputs
     if len(lead_probabilities) == 12:
         # use the stack classifier
-        stack_classifier_input = np.concatenate(list(lead_probabilities.values()), axis=1)
+
+        stack_inputs = [lead_probabilities[lead] for lead in LEADS]
+        stack_classifier_input = np.concatenate(stack_inputs, axis=1)
         probabilities = stack_classifier.predict_proba(stack_classifier_input)
         if type(probabilities) == list:
             for idx in range(len(probabilities)):
