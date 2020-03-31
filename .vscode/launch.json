@@ -46,10 +46,10 @@
             "console": "integratedTerminal"
         },
         {
-            "name": "Python: gradient_boosting_run_12ECG_classifier.py",
+            "name": "Python: scikit_fe_run_12ECG_classifier.py",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/gradient_boosting_run_12ECG_classifier.py",
+            "program": "${workspaceFolder}/scikit_fe_run_12ECG_classifier.py",
             "console": "integratedTerminal"
         },
     ]

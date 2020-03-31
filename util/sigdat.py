@@ -2,7 +2,7 @@ import math
 import os
 import re
 from collections import OrderedDict
-from subprocess import run
+from subprocess import run, DEVNULL
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -163,6 +163,8 @@ def _extract_signal_features(temp_dir, r, sig_idx):
         cwd=temp_dir,
         shell=True,
         check=True,
+        stdout=DEVNULL,
+        stderr=DEVNULL
     )
     ann = rdann(r_pth, f"atr{sig_idx}",)
     signal_feature = {}

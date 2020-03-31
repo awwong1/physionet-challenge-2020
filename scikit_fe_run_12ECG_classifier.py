@@ -12,6 +12,7 @@ from sklearn.preprocessing import LabelBinarizer
 from tqdm import tqdm
 
 from util.sigproc import extract_record_features
+from util.sigdat import convert_to_wfdb_record, extract_features
 
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 THRESHOLD = 0.9
@@ -33,71 +34,57 @@ LEADS = (
 
 def run_12ECG_classifier(data, header_data, classes, model):
     lead_classifiers, stack_classifier = model
-
     num_classes = len(classes)
-    features = extract_record_features(
-        data, header_data, template_resample=60, include_fourier=True
-    )
+
+    r = convert_to_wfdb_record(data, header_data)
+    features = extract_features(r)
 
     sex = features.pop("sex")
     age = features.pop("age")
     target = features.pop("target")
-
     sig = features.pop("sig")
-    # split out each lead as as its own feature array
-    sig_concat = OrderedDict()
-    for sig_name, sig_features in sig.items():
-        sig_concat[sig_name] = np.concatenate(
-            [
-                sex.flatten(),
-                age.flatten(),
-                *[v.flatten() for v in sig_features.values()],
-            ]
-        )
 
-    # run each separate lead in their respective lead classifier
-    stack_inputs = []
-    for sig_name in LEADS:
-        sig_concat_features = sig_concat[sig_name]
-        try:
-            stack_input = lead_classifiers[sig_name].predict_proba(sig_concat_features.reshape(1, -1))
-        except AttributeError as e:
-            stack_input = self.lead_classifiers[sig_name].predict(sig_concat_features.reshape(1, -1))
+    # evaluate each individual lead classifier
+    lead_probabilities = OrderedDict()
+    lead_outputs = OrderedDict()
+    for lead, sig_features in sig.items():
+        if sig_features is None:
+            continue
 
-        if type(stack_input) == list:
-            for idx in range(len(stack_input)):
-                stack_input[idx] = stack_input[idx][:, 1]
-            stack_input = np.stack(stack_input).T
-        stack_inputs.append(stack_input)
+        lead_inputs = np.concatenate([sex.flatten(), age.flatten(), *[v.flatten() for v in sig_features.values()]])
+        lead_inputs = np.reshape(lead_inputs, (1, -1))
 
+        lead_probability = lead_classifiers[lead].predict_proba(lead_inputs)
+        lead_output = lead_classifiers[lead].predict(lead_inputs)
+        if type(lead_probability) == list:
+            for idx in range(len(lead_probability)):
+                lead_probability[idx] = lead_probability[idx][:, 1]
+            lead_probability = np.stack(lead_probability).T
+        lead_probabilities[lead] = lead_probability
+        lead_outputs[lead] = lead_output
 
-    dims = set([len(si.shape) for si in stack_inputs])
-    assert len(dims) == 1, "stack dimensions must be equal"
-    dim = dims.pop()
-    if dim == 2:
-        stack_inputs = np.concatenate(stack_inputs, axis=1)
-    elif dim == 1:
-        stack_inputs = np.stack(stack_inputs).T
-
-    outputs = stack_classifier.predict(stack_inputs)
-
-    # if output shape is not two dimensional, expand
-    if len(outputs.shape) == 1:
-        lb = LabelBinarizer()
-        lb.fit(outputs)
-        outputs = lb.transform(outputs)
-
-    outputs = outputs.astype(np.int)
-
-    try:
-        probabilities = stack_classifier.predict_proba(stack_inputs)
-    except AttributeError as e:
-        probabilities = outputs.astype(np.float)
-
-    if type(probabilities) == list:
-        for idx in range(len(probabilities)):
-            probabilities[idx] = probabilities[idx][:, 1]
-        probabilities = np.stack(probabilities).T
+    # construct the stack classifier inputs
+    if len(lead_probabilities) == 12:
+        # use the stack classifier
+        stack_classifier_input = np.concatenate(list(lead_probabilities.values()), axis=1)
+        probabilities = stack_classifier.predict_proba(stack_classifier_input)
+        if type(probabilities) == list:
+            for idx in range(len(probabilities)):
+                probabilities[idx] = probabilities[idx][:, 1]
+            probabilities = np.stack(probabilities).T
+        outputs = stack_classifier.predict(stack_classifier_input)
+    else:
+        # use consensus among lead outputs
+        probabilities = np.mean(np.stack(list(a.flatten() for a in lead_probabilities.values())), axis=0)
+        votes = np.sum(np.stack(list(lead_outputs.values())).squeeze(), axis=0)
+        if np.max(votes) > 0:
+            outputs = (votes / (0.9 * np.max(votes)) >= 1).astype(int).flatten()
+        else:
+            # default to RBBB
+            # ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
+            outputs = np.zeros(9)
+            outputs[6] = 1
+            outputs = outputs.astype(int)
 
     return outputs.squeeze(), probabilities.squeeze()
 
