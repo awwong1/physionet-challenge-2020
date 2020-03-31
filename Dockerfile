@@ -27,12 +27,24 @@ COPY scikit_fe_run_12ECG_classifier.py run_12ECG_classifier.py
 
 # ecgpuwave build and installation
 RUN apt-get update && apt-get install -y make gfortran gcc libcurl4-openssl-dev
+RUN wget https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/wfdb-10.6.2.tar.gz
+RUN tar -xzvf wfdb-10.6.2.tar.gz
+RUN wget https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/ecgpuwave-1.3.4.tar.gz
+RUN tar -xzvf ecgpuwave-1.3.4.tar.gz
 WORKDIR /physionet/wfdb-10.6.2
 RUN ./configure
 RUN make install
 WORKDIR /physionet/ecgpuwave-1.3.4
 RUN make install
-WORKDIR /physionet
+
+# WORKDIR /physionet/ecgpuwave-1.3.4
+# RUN make install
+# WORKDIR /physionet
+
+# RUN mkdir bin
+# RUN wget -O bin/ecgpuwave https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/ecgpuwave
+# RUN chmod a+x bin/ecgpuwave
+# ENV PATH="/physionet/bin:${PATH}"
 
 # Install necessary requirements for running the script
 RUN pip install -r requirements.txt

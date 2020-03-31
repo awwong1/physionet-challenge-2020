@@ -49,6 +49,15 @@ python3 evaluation-2020/evaluate_12ECG_score.py Training_WFDB out
 python3 -m unittest discover
 ```
 
+### ECGPUWAVE and WFDB Library
+```bash
+wget https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/wfdb-10.6.2.tar.gz
+tar -xzvf wfdb-10.6.2.tar.gz
+cd wfdb-10.6.2
+./configure
+sudo make install
+```
+
 ### Sanity checking the Dockerfile
 
 ```bash
