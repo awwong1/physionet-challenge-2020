@@ -19,9 +19,9 @@ RUN apt-get update && apt-get install -y wget tar
 
 # Feature Extraction + Scikit Learn project setup
 RUN mkdir -p experiments/PhysioNet2020/Scikit_Learn/
-RUN wget -O experiments/PhysioNet2020/Scikit_Learn/GradientBoostingClassifier.tar.gz \
-    https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/experiments/PhysioNet2020/Scikit_Learn/GradientBoostingClassifier.tar.gz
-RUN tar -xvf experiments/PhysioNet2020/Scikit_Learn/GradientBoostingClassifier.tar.gz \
+RUN wget -O experiments/PhysioNet2020/Scikit_Learn/ecgpuwave-GradientBoostingClassifier.tar.gz \
+    https://swift-yeg.cloud.cybera.ca:8080/v1/AUTH_e3b719b87453492086f32f5a66c427cf/physionet_2020/experiments/PhysioNet2020/Scikit_Learn/ecgpuwave-GradientBoostingClassifier.tar.gz
+RUN tar -xvf experiments/PhysioNet2020/Scikit_Learn/ecgpuwave-GradientBoostingClassifier.tar.gz \
     -C experiments/PhysioNet2020/Scikit_Learn/
 COPY scikit_fe_run_12ECG_classifier.py run_12ECG_classifier.py
 
