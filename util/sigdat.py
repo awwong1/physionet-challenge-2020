@@ -46,9 +46,13 @@ def convert_to_wfdb_record(data, header_data):
     n_sig, sig_len = data.shape  # do not trust provided n_sig or sig_len
 
     record_name = record_fields.get("record_name", "A9999")
+    for char in record_name:
+        if not char.isalnum():
+            record_name = "A9999"
+            break
 
     file_names = signal_fields.get("file_name")
-    if not file_names or len(file_names) != n_sig:
+    if not file_names or len(file_names) != n_sig or any([record_name not in file_name for file_name in file_names]):
         file_names = [f"{record_name}.dat",] * n_sig
 
     fmt = signal_fields.get("fmt")
