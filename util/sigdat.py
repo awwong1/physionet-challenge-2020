@@ -14,6 +14,7 @@ from wfdb.io import Record, _header, rdann
 
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 SEX = ("Male", "Female")
+SIG_NAMES = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
 
 
 def convert_to_wfdb_record(data, header_data):
@@ -39,36 +40,88 @@ def convert_to_wfdb_record(data, header_data):
     # Set the comments field
     comments = [line.strip(" \t#") for line in comment_lines]
 
+
+    # The Physionet 2020 header file cannot be trusted!
+    # Massage data if very wrong
+    n_sig, sig_len = data.shape  # do not trust provided n_sig or sig_len
+
+    record_name = record_fields.get("record_name", "A9999")
+
     file_names = signal_fields.get("file_name")
-    if file_names:
-        for idx, fn in enumerate(file_names):
-            file_names[idx] = fn.split(".")[0] + ".dat"
+    if not file_names or len(file_names) != n_sig:
+        file_names = [f"{record_name}.dat",] * n_sig
+
+    fmt = signal_fields.get("fmt")
+    if not fmt or len(fmt) != n_sig:
+        fmt = ["16",] * n_sig
+
+    samps_per_frame = signal_fields.get("samps_per_frame")
+    if not samps_per_frame or len(samps_per_frame) != n_sig:
+        samps_per_frame = [1,] * n_sig
+
+    skew = signal_fields.get("skew")
+    if not skew or len(skew) != n_sig:
+        skew = [None,] * n_sig
+
+    byte_offset = signal_fields.get("byte_offset")
+    if not byte_offset or len(byte_offset) != n_sig:
+        byte_offset = [24,] * n_sig
+
+    adc_gain = signal_fields.get("adc_gain")
+    if not adc_gain or len(adc_gain) != n_sig:
+        adc_gain = [1000.0,] * n_sig
+
+    baseline = signal_fields.get("baseline")
+    if not baseline or len(baseline) != n_sig:
+        baseline = [0,] * n_sig
+
+    units = signal_fields.get("units")
+    if not units or len(units) != n_sig:
+        units = ["mV",] * n_sig
+
+    adc_res = signal_fields.get("adc_res")
+    if not adc_res or len(adc_res) != n_sig:
+        adc_res = [16,] * n_sig
+
+    adc_zero = signal_fields.get("adc_zero")
+    if not adc_zero or len(adc_zero) != n_sig:
+        adc_zero = [0,] * n_sig
+
+    block_size = signal_fields.get("block_size")
+    if not block_size or len(block_size) != n_sig:
+        block_size = [0,] * n_sig
+
+    init_value = [int(x) for x in data[:, 0].tolist()]
+
+    sig_name = signal_fields.get("sig_name")
+    if not sig_name or len(sig_name) != n_sig:
+        sig_name = SIG_NAMES[:n_sig]
 
     r = Record(
         # p_signal=data.T,
         d_signal=data.T.astype(int),
-        record_name=record_fields.get("record_name", "A000"),
-        n_sig=record_fields.get("n_sig", 12),
+        record_name=record_name,
+        n_sig=n_sig,  # record_fields.get("n_sig", 12),
         fs=record_fields.get("fs", 500),
         counter_freq=record_fields.get("counter_freq"),
         base_counter=record_fields.get("base_counter"),
-        sig_len=record_fields.get("sig_len"),
+        sig_len=sig_len,  # record_fields.get("sig_len"),
         base_time=record_fields.get("base_time"),
         base_date=record_fields.get("base_date"),
         file_name=file_names,
-        fmt=signal_fields.get("fmt"),
-        samps_per_frame=signal_fields.get("samps_per_frame"),
-        skew=signal_fields.get("skew"),
-        byte_offset=signal_fields.get("byte_offset"),
-        adc_gain=signal_fields.get("adc_gain"),
-        baseline=signal_fields.get("baseline"),
-        units=signal_fields.get("units"),
-        adc_res=signal_fields.get("adc_res"),
-        adc_zero=signal_fields.get("adc_zero"),
-        init_value=signal_fields.get("init_value"),
+        fmt=fmt,  # signal_fields.get("fmt"),
+        samps_per_frame=samps_per_frame,  # signal_fields.get("samps_per_frame"),
+        skew=skew,  # signal_fields.get("skew"),
+        byte_offset=byte_offset,  # signal_fields.get("byte_offset"),
+        adc_gain=adc_gain,  # signal_fields.get("adc_gain"),
+        baseline=baseline,  # signal_fields.get("baseline"),
+        units=units,  # signal_fields.get("units"),
+        adc_res=adc_res,  # signal_fields.get("adc_res"),
+        adc_zero=adc_zero,  # signal_fields.get("adc_zero"),
+        init_value=init_value,  # signal_fields.get("init_value"),
+        block_size=block_size,  # signal_fields.get("block_size"),
+        sig_name=sig_name,  # signal_fields.get("sig_name")
         checksum=signal_fields.get("checksum"),
-        block_size=signal_fields.get("block_size"),
-        sig_name=signal_fields.get("sig_name"),
         comments=comments,
     )
 
@@ -94,11 +147,8 @@ def extract_features(r, check_errors=False):
 
     if check_errors:
         assert (
-            len(r.sig_name) == r.n_sig
-        ), f"{record_name} len(sig_name) != n_sig, {r.sig_name} != {r.n_sig}"
-        assert (
-            num_signals == r.n_sig
-        ), f"{record_name} p_signal.shape[1] != n_sig, {p_signal.shape}[1] != {r.n_sig}"
+            len(r.sig_name) == num_signals
+        ), f"{record_name} len(sig_name) != num_signals, {r.sig_name} != {num_signals}"
         assert fs >= 500, f"{record_name} sampling frequency fs < 500, got {fs}"
 
     # Run the ecgpuwave annotation program and get the relevant annotations
@@ -189,7 +239,9 @@ def _extract_signal_features(sig_idx, temp_dir="", r=None):
         r_mean = np.mean(r_amps)
         r_var = np.var(r_amps)
         r_std = np.std(r_amps)
-        signal_feature["R-peak"] = np.array([r_max, r_min, r_median, r_mean, r_var, r_std])
+        signal_feature["R-peak"] = np.array(
+            [r_max, r_min, r_median, r_mean, r_var, r_std]
+        )
 
         # Get P-wave peak indicies
         p_idxs = list((idx) for (idx, symb) in idx_2_symb if symb == "p")
@@ -202,7 +254,9 @@ def _extract_signal_features(sig_idx, temp_dir="", r=None):
         p_mean = np.mean(p_amps)
         p_var = np.var(p_amps)
         p_std = np.std(p_amps)
-        signal_feature["P-peak"] = np.array([p_max, p_min, p_median, p_mean, p_var, p_std])
+        signal_feature["P-peak"] = np.array(
+            [p_max, p_min, p_median, p_mean, p_var, p_std]
+        )
 
         # Get T-wave peak indicies
         t_idxs = list((idx) for (idx, symb) in idx_2_symb if symb == "t")
@@ -215,7 +269,9 @@ def _extract_signal_features(sig_idx, temp_dir="", r=None):
         t_mean = np.mean(t_amps)
         t_var = np.var(t_amps)
         t_std = np.std(t_amps)
-        signal_feature["T-peak"] = np.array([t_max, t_min, t_median, t_mean, t_var, t_std])
+        signal_feature["T-peak"] = np.array(
+            [t_max, t_min, t_median, t_mean, t_var, t_std]
+        )
 
         # Get heart rate as normal beats per minute (distance between R-peaks)
         hr = list(r.fs / interval * 60 for interval in np.diff(r_idxs))
