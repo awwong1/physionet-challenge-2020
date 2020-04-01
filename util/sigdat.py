@@ -97,10 +97,14 @@ def convert_to_wfdb_record(data, header_data):
     if not sig_name or len(sig_name) != n_sig:
         sig_name = SIG_NAMES[:n_sig]
 
+    checksum = signal_fields.get("checksum")
+    if not checksum or len(checksum) != n_sig:
+        checksum = [0,] * n_sig
+
     r = Record(
         # p_signal=data.T,
         d_signal=data.T.astype(int),
-        record_name=record_name,
+        record_name="entry", #record_name, # record_name must only contain alphanumeric chars, not guaranteed
         n_sig=n_sig,  # record_fields.get("n_sig", 12),
         fs=record_fields.get("fs", 500),
         counter_freq=record_fields.get("counter_freq"),
@@ -120,8 +124,8 @@ def convert_to_wfdb_record(data, header_data):
         adc_zero=adc_zero,  # signal_fields.get("adc_zero"),
         init_value=init_value,  # signal_fields.get("init_value"),
         block_size=block_size,  # signal_fields.get("block_size"),
-        sig_name=sig_name,  # signal_fields.get("sig_name")
-        checksum=signal_fields.get("checksum"),
+        sig_name=sig_name,  # signal_fields.get("sig_name"),
+        checksum=checksum,  # signal_fields.get("checksum"),
         comments=comments,
     )
 
