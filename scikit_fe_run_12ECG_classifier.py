@@ -36,8 +36,11 @@ def run_12ECG_classifier(data, header_data, classes, model):
     lead_classifiers, stack_classifier = model
     num_classes = len(classes)
 
-    r = convert_to_wfdb_record(data, header_data)
-    features = extract_features(r)
+    try:
+        r = convert_to_wfdb_record(data, header_data)
+        features = extract_features(r)
+    except Exception as e:
+        raise Exception(e, f"data.shape: {data.shape}; " + "".join(header_data))
 
     sex = features.pop("sex")
     age = features.pop("age")
