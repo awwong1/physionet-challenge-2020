@@ -78,7 +78,7 @@ def run_12ECG_classifier(data, header_data, classes, model):
                 probabilities[idx] = probabilities[idx][:, 1]
             probabilities = np.stack(probabilities).T
         outputs = stack_classifier.predict(stack_classifier_input).astype(int)
-    else:
+    elif len(lead_probabilities) >= 1:
         # use consensus among lead outputs
         probabilities = np.mean(np.stack(list(a.flatten() for a in lead_probabilities.values())), axis=0)
         votes = np.sum(np.stack(list(lead_outputs.values())).squeeze(), axis=0)
@@ -90,6 +90,12 @@ def run_12ECG_classifier(data, header_data, classes, model):
             outputs = np.zeros(9)
             outputs[6] = 1
             outputs = outputs.astype(int)
+    else:
+        # wow, none of the leads were classifiable, just default to RBBB
+        outputs = np.zeros(9)
+        outputs[6] = 1
+        outputs = outputs.astype(int)
+        probabilities = outputs.astype(float)
 
     return outputs.squeeze(), probabilities.squeeze()
 
