@@ -67,30 +67,31 @@ def run_12ECG_classifier(data, header_data, classes, model):
         lead_outputs[lead] = lead_output
 
     # construct the stack classifier inputs
-    if len(lead_probabilities) == 12:
-        # use the stack classifier
+    try:
+        if len(lead_probabilities) == 12:
+            # use the stack classifier
 
-        stack_inputs = [lead_probabilities[lead] for lead in LEADS]
-        stack_classifier_input = np.concatenate(stack_inputs, axis=1)
-        probabilities = stack_classifier.predict_proba(stack_classifier_input)
-        if type(probabilities) == list:
-            for idx in range(len(probabilities)):
-                probabilities[idx] = probabilities[idx][:, 1]
-            probabilities = np.stack(probabilities).T
-        outputs = stack_classifier.predict(stack_classifier_input).astype(int)
-    elif len(lead_probabilities) >= 1:
-        # use consensus among lead outputs
-        probabilities = np.mean(np.stack(list(a.flatten() for a in lead_probabilities.values())), axis=0)
-        votes = np.sum(np.stack(list(lead_outputs.values())).squeeze(), axis=0)
-        if np.max(votes) > 0:
-            outputs = (votes / (0.9 * np.max(votes)) >= 1).astype(int).flatten()
+            stack_inputs = [lead_probabilities[lead] for lead in LEADS]
+            stack_classifier_input = np.concatenate(stack_inputs, axis=1)
+            probabilities = stack_classifier.predict_proba(stack_classifier_input)
+            if type(probabilities) == list:
+                for idx in range(len(probabilities)):
+                    probabilities[idx] = probabilities[idx][:, 1]
+                probabilities = np.stack(probabilities).T
+            outputs = stack_classifier.predict(stack_classifier_input).astype(int)
         else:
-            # default to RBBB
-            # ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
-            outputs = np.zeros(9)
-            outputs[6] = 1
-            outputs = outputs.astype(int)
-    else:
+            # use consensus among lead outputs
+            probabilities = np.mean(np.stack(list(a.flatten() for a in lead_probabilities.values())), axis=0)
+            votes = np.sum(np.stack(list(lead_outputs.values())).squeeze(), axis=0)
+            if np.max(votes) > 0:
+                outputs = (votes / (0.9 * np.max(votes)) >= 1).astype(int).flatten()
+            else:
+                # default to RBBB
+                # ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
+                outputs = np.zeros(9)
+                outputs[6] = 1
+                outputs = outputs.astype(int)
+    except Exception as e:
         # wow, none of the leads were classifiable, just default to RBBB
         outputs = np.zeros(9)
         outputs[6] = 1
