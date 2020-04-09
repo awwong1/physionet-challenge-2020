@@ -318,33 +318,35 @@ def _calculate_durations(idx_2_symb, sampling_rate=500):
                 if prev_duration_key == "":
                     prev_duration_key = " "
 
-                # lb_interval: `(, KEY, ), (, KEY` # from ( to (
-                lb_interval = (cur_lb_idx - prev_lb_idx) / sampling_rate
-                lb_intervals = all_durations.get(
-                    ("(", prev_duration_key, "(", duration_key), []
-                )
-                lb_intervals.append(lb_interval)
-                all_durations[
-                    ("(", prev_duration_key, "(", duration_key)
-                ] = lb_intervals
+                if prev_lb_idx is not None:
+                    # lb_interval: `(, KEY, ), (, KEY` # from ( to (
+                    lb_interval = (cur_lb_idx - prev_lb_idx) / sampling_rate
+                    lb_intervals = all_durations.get(
+                        ("(", prev_duration_key, "(", duration_key), []
+                    )
+                    lb_intervals.append(lb_interval)
+                    all_durations[
+                        ("(", prev_duration_key, "(", duration_key)
+                    ] = lb_intervals
 
-                # rb_interval: `KEY, ), (, KEY, )` # from ) to )
-                rb_interval = (cur_rb_idx - prev_rb_idx) / sampling_rate
-                rb_intervals = all_durations.get(
-                    (prev_duration_key, ")", duration_key, ")"), []
-                )
-                rb_intervals.append(rb_interval)
-                all_durations[
-                    (prev_duration_key, ")", duration_key, ")")
-                ] = rb_intervals
+                if prev_rb_idx is not None:
+                    # rb_interval: `KEY, ), (, KEY, )` # from ) to )
+                    rb_interval = (cur_rb_idx - prev_rb_idx) / sampling_rate
+                    rb_intervals = all_durations.get(
+                        (prev_duration_key, ")", duration_key, ")"), []
+                    )
+                    rb_intervals.append(rb_interval)
+                    all_durations[
+                        (prev_duration_key, ")", duration_key, ")")
+                    ] = rb_intervals
 
-                # segment: `KEY, ), (, KEY` # from ) to (
-                segment = (cur_lb_idx - prev_rb_idx) / sampling_rate
-                segments = all_durations.get(
-                    (prev_duration_key, ")", "(", duration_key), []
-                )
-                segments.append(segment)
-                all_durations[(prev_duration_key, ")", "(", duration_key)] = segments
+                    # segment: `KEY, ), (, KEY` # from ) to (
+                    segment = (cur_lb_idx - prev_rb_idx) / sampling_rate
+                    segments = all_durations.get(
+                        (prev_duration_key, ")", "(", duration_key), []
+                    )
+                    segments.append(segment)
+                    all_durations[(prev_duration_key, ")", "(", duration_key)] = segments
 
             prev_wf_symbs = cur_wf_symbs
         else:

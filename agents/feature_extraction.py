@@ -73,15 +73,14 @@ class FeatureExtractionAgent(BaseAgent):
             output_dir=self.out_dir,
         )
 
-        try:
-            with Pool(
-                len(os.sched_getaffinity(0)),
-                initializer=tqdm.set_lock,
-                initargs=(tqdm.get_lock(),),
-            ) as p:
-                meta = dict(p.imap_unordered(worker_fn, self.tqdm,))
-        except Exception:
-            meta = dict(worker_fn(rn) for rn in self.tqdm)
+        with Pool(
+            len(os.sched_getaffinity(0)),
+            initializer=tqdm.set_lock,
+            initargs=(tqdm.get_lock(),),
+        ) as p:
+            meta = dict(p.imap_unordered(worker_fn, self.tqdm,))
+        # single process
+        # meta = dict(worker_fn(rn) for rn in self.tqdm)
 
         # do some logging for weirdness in the dataset
         for input_file, meta_payload in meta.items():
