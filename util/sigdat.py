@@ -1,20 +1,25 @@
 import math
 import os
 import re
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from functools import partial
 from multiprocessing import Pool
+from shutil import copy
 from subprocess import DEVNULL, run
 from tempfile import TemporaryDirectory
 
 import numpy as np
 import scipy
+import scipy.signal as ss
+import wfdb
 from scipy.signal import resample, windows
 from wfdb.io import Record, _header, rdann
+from wfdb import processing
 
 LABELS = ("AF", "I-AVB", "LBBB", "Normal", "PAC", "PVC", "RBBB", "STD", "STE")
 SEX = ("Male", "Female")
 SIG_NAMES = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
+ANN_SYMBS = ("(", ")", "p", "N", "t")
 
 
 def convert_to_wfdb_record(data, header_data):
@@ -40,7 +45,6 @@ def convert_to_wfdb_record(data, header_data):
     # Set the comments field
     comments = [line.strip(" \t#") for line in comment_lines]
 
-
     # The Physionet 2020 header file cannot be trusted!
     # Massage data if very wrong
     n_sig, sig_len = data.shape  # do not trust provided n_sig or sig_len
@@ -52,7 +56,11 @@ def convert_to_wfdb_record(data, header_data):
             break
 
     file_names = signal_fields.get("file_name")
-    if not file_names or len(file_names) != n_sig or any([record_name not in file_name for file_name in file_names]):
+    if (
+        not file_names
+        or len(file_names) != n_sig
+        or any([record_name not in file_name for file_name in file_names])
+    ):
         file_names = [f"{record_name}.dat",] * n_sig
 
     fmt = signal_fields.get("fmt")
@@ -108,7 +116,7 @@ def convert_to_wfdb_record(data, header_data):
     r = Record(
         # p_signal=data.T,
         d_signal=data.T.astype(int),
-        record_name="entry", #record_name, # record_name must only contain alphanumeric chars, not guaranteed
+        record_name="entry",  # record_name, # record_name must only contain alphanumeric chars, not guaranteed
         n_sig=n_sig,  # record_fields.get("n_sig", 12),
         fs=record_fields.get("fs", 500),
         counter_freq=record_fields.get("counter_freq"),
@@ -138,62 +146,24 @@ def convert_to_wfdb_record(data, header_data):
     return r
 
 
-def extract_features(r, check_errors=False):
+def _parse_comment_lines(comments=[]):
+    """Given a list of string comments, extract Physionet2020 relevant features.
     """
-    Given a wfdb.io.Record, extract relevant features for classifier by signal name
-    """
-    features = OrderedDict({})
+    target = [0.0] * len(LABELS)
+    sex = [0.0, 0.0]  # Male, Female
 
-    # Get all possible information from the comments
-    # applies to the entire record
-    _parse_comment_lines(r, features)
+    comment_features = OrderedDict(
+        {"target": np.array(target), "age": np.array([-1,]), "sex": np.array(sex)}
+    )
+    if not comments:
+        return comment_features
 
-    # Get all relevant signal features from the record
-    record_name = r.record_name
-    seq_len, num_signals = r.p_signal.shape
-    fs = r.fs
-
-    if check_errors:
-        assert (
-            len(r.sig_name) == num_signals
-        ), f"{record_name} len(sig_name) != num_signals, {r.sig_name} != {num_signals}"
-        assert fs >= 500, f"{record_name} sampling frequency fs < 500, got {fs}"
-
-    # Run the ecgpuwave annotation program and get the relevant annotations
-    signal_features = {}
-    with TemporaryDirectory() as temp_dir:
-        # convert the analogue p_signal into digital d_signal
-        r.adc(inplace=True)
-        r.wrsamp(write_dir=temp_dir)
-        # convert the digital d_signal back to analogue p_signal
-        r.dac(inplace=True)
-
-        worker_fn = partial(_extract_signal_features, temp_dir=temp_dir, r=r)
-        signals = list(range(num_signals))
-
-        # single process approach
-        # signal_features = dict([worker_fn(signal) for signal in signals])
-
-        with Pool(len(os.sched_getaffinity(0))) as p:
-            signal_features = dict(p.imap(worker_fn, signals,))
-
-        signal_features.pop(None, None)
-
-    features["sig"] = signal_features
-
-    return features
-
-
-def _parse_comment_lines(r, features):
-    # Get all possible information from the comments
-    # applies to the entire record
-    for comment in r.comments:
+    for comment in comments:
         dx_grp = re.search(r"^Dx: (?P<dx>.*)$", comment)
         if dx_grp:
-            target = [0.0] * len(LABELS)
             for dxi in dx_grp.group("dx").split(","):
                 target[LABELS.index(dxi)] = 1.0
-            features["target"] = np.array(target)
+            comment_features["target"] = np.array(target)
             continue
 
         age_grp = re.search(r"^Age: (?P<age>.*)$", comment)
@@ -201,12 +171,11 @@ def _parse_comment_lines(r, features):
             age = float(age_grp.group("age"))
             if math.isnan(age):
                 age = -1.0
-            features["age"] = np.array([age,])
+            comment_features["age"] = np.array([age,])
             continue
 
         sx_grp = re.search(r"^Sex: (?P<sx>.*)$", comment)
         if sx_grp:
-            sex = [0.0, 0.0]  # Male, Female
             if sx_grp.group("sx").upper().startswith("M"):
                 sex[0] = 1.0
             elif sx_grp.group("sx").upper().startswith("F"):
@@ -214,8 +183,174 @@ def _parse_comment_lines(r, features):
             else:
                 # patient sex was not provided, leave as zeros for both
                 pass
-            features["sex"] = np.array(sex)
+            comment_features["sex"] = np.array(sex)
             continue
+
+    return comment_features
+
+
+def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
+    """
+    Call the ecgpuwave fortran binary.
+
+    Parameters
+    ----------
+    sig_idx : int
+        index of the current wfdb.Record signal to analyze
+    record_name : str
+        record name to run ecgpuwave on
+    temp_dir : str
+        path to directory containing the corresponding wfdb.Record
+    write_dir : str (optional)
+        path to directory to store wfdb.Annotation output files
+
+    Returns
+    -------
+    sig_idx : int
+        signal index ecgpuwave ran on
+    ann : wfdb.Annotation, None
+        ecgpuwave annotation results, or None if an error occurred
+    """
+    if write_dir:
+        # check to see if the record has already been processed
+        c_pth = os.path.join(write_dir, record_name)
+        try:
+            return sig_idx, wfdb.rdann(c_pth, f"atr{sig_idx}")
+        except Exception:
+            # nope, fallback to calling ecgpuwave
+            pass
+
+    r_pth = os.path.join(temp_dir, record_name)
+
+    ann = None
+    try:
+        run(
+            f"ecgpuwave -r {record_name} -a atr{sig_idx} -s {sig_idx}",
+            cwd=temp_dir,
+            shell=True,
+            check=True,
+            stdout=DEVNULL,
+            stderr=DEVNULL,
+        )
+        _ann = wfdb.rdann(r_pth, f"atr{sig_idx}")
+        if len(_ann.sample):
+            # if the write_dir is set, copy the annotation file there
+            if write_dir:
+                copy(f"{r_pth}.atr{sig_idx}", f"{c_pth}")
+            ann = _ann
+    except Exception:
+        # ecgpuwave failed to annotate the signal
+        pass
+    return sig_idx, ann
+
+
+def extract_features(r, ann_dir=None):
+    """
+    Given a wfdb.Record, extract relevant features for classifier by signal name.
+
+    Parameters
+    ----------
+    r : wfdb.Record
+        Required attributes: comments, record_name, p_signal, fs
+    ann_dir : str, optional
+        If provided, write extracted ecgpuwave annotations here
+    """
+    features = OrderedDict(_parse_comment_lines(r.comments))
+    _seq_len, num_signals = r.p_signal.shape
+    record_name = r.record_name
+    sampling_rate = r.fs
+
+    # Inspired by BioSPPy, perform the same signal filtering step on 12 leads
+    # =======================================================================
+    # https://github.com/PIA-Group/BioSPPy/blob/212c3dcbdb1ec43b70ba7199deb5eb22bcb78fd0/biosppy/signals/ecg.py#L71
+    order = int(0.3 * sampling_rate)
+    if order % 2 == 0:
+        order += 1
+    sig_filter = ss.firwin(
+        numtaps=order, cutoff=[3, 45], pass_zero=False, fs=sampling_rate
+    )
+    r.p_signal = ss.filtfilt(b=sig_filter, a=np.array([1,]), x=r.p_signal, axis=0)
+
+    # Use ECGPUWAVE annotation program to get signal annotations
+    # ==========================================================
+    signal_annotations = {}  # sig_idx (0-11), ann (wfdb.Annotation, None)
+    with TemporaryDirectory() as temp_dir:
+        # convert the analogue p_signal into digital d_signal and back
+        r.adc(inplace=True)
+        r.wrsamp(write_dir=temp_dir)
+        r.dac(inplace=True)
+
+        worker_fn = partial(
+            _run_ecgpuwave,
+            record_name=record_name,
+            temp_dir=temp_dir,
+            write_dir=ann_dir,
+        )
+        signals = list(range(num_signals))
+
+        try:
+            assert not os.getppid(), "parent process exists, cannot use pool"
+            with Pool(len(os.sched_getaffinity(0))) as p:
+                signal_annotations = dict(p.imap(worker_fn, signals,))
+        except AssertionError:
+            # single process approach
+            signal_annotations = dict([worker_fn(signal) for signal in signals])
+
+    # Find all of the lead indicies that threw an ECGPUWAVE error
+    failed_ecgpuwave = [k for k, v in signal_annotations.items() if v is None]
+    for fe in failed_ecgpuwave:
+        signal_annotations.pop(fe)
+
+    # Iterate through the annotations to determine effective fallback annotation
+    # ==========================================================================
+    # A successful annotation must have at least 2 p, N, and t symbols
+    # Compare with each other, picking the one with the highest true positive count
+    sig_ann_idxs = list(signal_annotations.keys())
+    sig_ann_tp_count = {k: 0 for k in sig_ann_idxs}
+    lead_candidates = []
+
+    for i0, k0 in enumerate(sig_ann_idxs):
+        ann0 = signal_annotations[k0]
+        for i1, k1 in enumerate(sig_ann_idxs[i0 + 1 :]):
+            ann1 = signal_annotations[k1]
+            for r_symb in ANN_SYMBS:
+                r_idxs0 = np.array(
+                    [
+                        idx
+                        for (idx, symb) in zip(ann0.sample, ann0.symbol)
+                        if symb == r_symb
+                    ]
+                )
+                r_idxs1 = np.array(
+                    [
+                        idx
+                        for (idx, symb) in zip(ann1.sample, ann1.symbol)
+                        if symb == r_symb
+                    ]
+                )
+                try:
+                    c = processing.compare_annotations(
+                        r_idxs0, r_idxs1, int(0.02 * r.fs)
+                    )
+                    sig_ann_tp_count[k0] += c.tp
+                    sig_ann_tp_count[k1] += c.tp
+                except:
+                    pass
+
+    for sig_idx, ann in signal_annotations.items():
+        symb_counter = Counter(ann.symbol)
+        candidate = True
+        for r_symb in ANN_SYMBS:
+            if symb_counter.get(r_symb, 0) < 2:
+                candidate = False
+                break
+        if candidate:
+            lead_candidates.append(sig_idx)
+
+    # if this throws an Exception, not a single lead in the wfdb.Record is useable
+    fallback_lead = max(lead_candidates, key=(lambda k: sig_ann_tp_count[k]))
+
+    return features
 
 
 def _extract_signal_features(sig_idx, temp_dir="", r=None):
