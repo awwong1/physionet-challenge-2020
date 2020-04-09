@@ -37,34 +37,40 @@ class FeatureExtractionAgent(BaseAgent):
 
     @staticmethod
     def proc_extract_features(input_file, input_dir="", output_dir=""):
-        fp = os.path.join(input_dir, input_file)
-        data, headers = load_challenge_data(fp)
-        r = convert_to_wfdb_record(data, headers)
+        try:
+            fp = os.path.join(input_dir, input_file)
+            data, headers = load_challenge_data(fp)
+            r = convert_to_wfdb_record(data, headers)
 
-        features = extract_features(r, ann_dir=output_dir)
+            features = extract_features(r, ann_dir=output_dir)
 
-        sex = features.pop("sex")
-        age = features.pop("age")
-        target = features.pop("target")
+            sex = features.pop("sex")
+            age = features.pop("age")
+            target = features.pop("target")
 
-        sig = features.pop("sig")
-        # split out each lead as as its own feature array
-        np_savez_data = OrderedDict()
-        for sig_name, sig_features in sig.items():
-            np_savez_data[sig_name] = np.concatenate(
-                [
-                    sex.flatten(),
-                    age.flatten(),
-                    *[v.flatten() for v in sig_features.values()],
-                ]
-            )
+            sig = features.pop("sig")
+            # split out each lead as as its own feature array
+            np_savez_data = OrderedDict()
+            for sig_name, sig_features in sig.items():
+                np_savez_data[sig_name] = np.concatenate(
+                    [
+                        sex.flatten(),
+                        age.flatten(),
+                        *[v.flatten() for v in sig_features.values()],
+                    ]
+                )
 
-        bn = os.path.splitext(input_file)[0]
-        out_f = os.path.join(output_dir, f"{bn}.npz")
+            bn = os.path.splitext(input_file)[0]
+            out_f = os.path.join(output_dir, f"{bn}.npz")
 
-        np.savez(out_f, target=target, **np_savez_data)
-        meta_payload = features.pop("meta", {})
-        return input_file, meta_payload
+            np.savez(out_f, target=target, **np_savez_data)
+            meta_payload = features.pop("meta", {})
+            return input_file, meta_payload
+        except Exception as e:
+            print("ERROR:", input_file)
+            print("ERROR:", input_file)
+            print("ERROR:", input_file)
+            raise e
 
     def run(self):
         worker_fn = partial(

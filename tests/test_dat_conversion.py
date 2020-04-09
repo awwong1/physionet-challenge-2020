@@ -51,7 +51,8 @@ class DatConversionTest(unittest.TestCase):
         self.assertFalse(os.path.isdir(temp_dir), "temp dir not cleaned up")
 
     def test_extract_features(self):
-        tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
+        # tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
+        tmp_input_file = os.path.join(self.input_directory, "A1140.mat")
         data, headers = load_challenge_data(tmp_input_file)
         r = convert_to_wfdb_record(data, headers)
 

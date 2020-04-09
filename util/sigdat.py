@@ -475,17 +475,17 @@ def extract_features(r, ann_dir=None):
 
         # Get P-wave peak indicies, amplitudes, stats
         p_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "p"]
-        p_amps = [r.p_signal[:, sig_idx][idx] for idx in p_idxs]
+        p_amps = [r.p_signal[:, sig_idx][idx] for idx in p_idxs if idx < seq_len]
         signal_feature["P-peak"] = _get_descriptive_stats(p_amps)
 
         # Get R-wave peak indicies, amplitudes, stats
         r_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "N"]
-        r_amps = [r.p_signal[:, sig_idx][idx] for idx in r_idxs]
+        r_amps = [r.p_signal[:, sig_idx][idx] for idx in r_idxs if idx < seq_len]
         signal_feature["R-peak"] = _get_descriptive_stats(r_amps)
 
         # Get T-wave peak indicies, amplitudes, stats
         t_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "t"]
-        t_amps = [r.p_signal[:, sig_idx][idx] for idx in t_idxs]
+        t_amps = [r.p_signal[:, sig_idx][idx] for idx in t_idxs if idx < seq_len]
         signal_feature["T-peak"] = _get_descriptive_stats(t_amps)
 
         # Get heart rate as normal beats per minute (distance between R-peaks)
