@@ -32,7 +32,7 @@ class FeatureExtractionAgent(BaseAgent):
             ):
                 input_files.append(f)
 
-        self.input_files = tuple(sorted(input_files))[:100]
+        self.input_files = tuple(sorted(input_files))
         self.tqdm = tqdm(self.input_files, desc=f"Extracting {self.input_directory}")
 
     @staticmethod
@@ -63,6 +63,8 @@ class FeatureExtractionAgent(BaseAgent):
         out_f = os.path.join(output_dir, f"{bn}.npz")
 
         np.savez(out_f, target=target, **np_savez_data)
+        meta_payload = features.pop("meta", {})
+        return input_file, meta_payload
 
     def run(self):
         worker_fn = partial(
@@ -77,9 +79,15 @@ class FeatureExtractionAgent(BaseAgent):
                 initializer=tqdm.set_lock,
                 initargs=(tqdm.get_lock(),),
             ) as p:
-                list(p.imap_unordered(worker_fn, self.tqdm,))
+                meta = dict(p.imap_unordered(worker_fn, self.tqdm,))
         except Exception:
-            [worker_fn(rn) for rn in self.tqdm]
+            meta = dict(worker_fn(rn) for rn in self.tqdm)
+
+        # do some logging for weirdness in the dataset
+        for input_file, meta_payload in meta.items():
+            unsupported_symbols = set().union(*meta_payload["unsupported_symbols"].values())
+            if unsupported_symbols:
+                self.logger.info(f"{input_file} unsupported symbols {unsupported_symbols}")
 
     def finalize(self):
         if self.tqdm:

@@ -77,7 +77,8 @@ def convert_to_wfdb_record(data, header_data):
 
     byte_offset = signal_fields.get("byte_offset")
     if not byte_offset or len(byte_offset) != n_sig:
-        byte_offset = [24,] * n_sig
+        # byte_offset = [24,] * n_sig
+        byte_offset = [0, ]* n_sig
 
     adc_gain = signal_fields.get("adc_gain")
     if not adc_gain or len(adc_gain) != n_sig:
@@ -116,7 +117,7 @@ def convert_to_wfdb_record(data, header_data):
     r = Record(
         # p_signal=data.T,
         d_signal=data.T.astype(int),
-        record_name="entry",  # record_name, # record_name must only contain alphanumeric chars, not guaranteed
+        record_name=record_name, # record_name must only contain alphanumeric chars, not guaranteed
         n_sig=n_sig,  # record_fields.get("n_sig", 12),
         fs=record_fields.get("fs", 500),
         counter_freq=record_fields.get("counter_freq"),
@@ -236,7 +237,8 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
         if len(_ann.sample):
             # if the write_dir is set, copy the annotation file there
             if write_dir:
-                copy(f"{r_pth}.atr{sig_idx}", f"{c_pth}")
+                os.makedirs(c_pth, exist_ok=True)
+                copy(f"{r_pth}.atr{sig_idx}", os.path.join(c_pth, f"{record_name}.atr{sig_idx}"))
             ann = _ann
     except Exception:
         # ecgpuwave failed to annotate the signal
@@ -249,17 +251,18 @@ def _get_descriptive_stats(a):
     """
     desc_out = np.array([-1,] * 6)
     try:
-        desc = scipy.stats.describe(a, axis=None)
-        desc_out = np.array(
-            [
-                desc.minmax[0],
-                desc.minmax[1],
-                desc.mean,
-                desc.variance,
-                desc.skewness,
-                desc.kurtosis,
-            ]
-        )
+        if len(a) > 0:
+            desc = scipy.stats.describe(a, axis=None)
+            desc_out = np.array(
+                [
+                    desc.minmax[0],
+                    desc.minmax[1],
+                    desc.mean,
+                    desc.variance,
+                    desc.skewness,
+                    desc.kurtosis,
+                ]
+            )
     except Exception:
         pass
     return desc_out
@@ -363,8 +366,8 @@ def extract_features(r, ann_dir=None):
         If provided, write extracted ecgpuwave annotations here
     """
     features = OrderedDict(_parse_comment_lines(r.comments))
-    features["debug"] = {}
-    _seq_len, num_signals = r.p_signal.shape
+    features["meta"] = {}
+    seq_len, num_signals = r.p_signal.shape
     record_name = r.record_name
     sampling_rate = r.fs
 
@@ -456,11 +459,13 @@ def extract_features(r, ann_dir=None):
             sig_ann_candidates.append(sig_idx)
 
     # WARNING: if this throws an Exception, not a single lead in the wfdb.Record is useable
+    assert len(sig_ann_candidates) >= 1, f"{record_name} no lead candidates"
     fallback_ann_idx = max(sig_ann_candidates, key=(lambda k: sig_ann_tp_count[k]))
 
     # Calculate basic statistical descriptors for each lead
     # =====================================================
     features["sig"] = OrderedDict()
+    features["meta"]["unsupported_symbols"] = {}
     for sig_idx, lead_name in enumerate(SIG_NAMES):
         signal_feature = {}
         ann = signal_annotations.get(sig_idx, signal_annotations[fallback_ann_idx])
@@ -520,225 +525,25 @@ def extract_features(r, ann_dir=None):
         unique_symbols = {key for keys in raw_durations.keys() for key in keys}
         supported_symbols = {"(", ")", "p", "N", "t", "tt"}
         unsupported_symbols = unique_symbols - supported_symbols
-        features["debug"]["unsupported_symbols"] = unsupported_symbols
+        features["meta"]["unsupported_symbols"][lead_name] = unsupported_symbols
 
-        # Set the signal feature into the record features dictionary
-        features["sig"][lead_name] = signal_feature
-
-    return features
-
-
-def _extract_signal_features(sig_idx, temp_dir="", r=None):
-    try:
-        # Call ecgpuwave (requires it to be in path)
-        r_pth = os.path.join(temp_dir, r.record_name)
-        run(
-            f"ecgpuwave -r {r.record_name} -a atr{sig_idx} -s {sig_idx}",
-            cwd=temp_dir,
-            shell=True,
-            check=True,
-            stdout=DEVNULL,
-            stderr=DEVNULL,
-        )
-        ann = rdann(r_pth, f"atr{sig_idx}",)
-        signal_feature = {}
-        # print(ann)
-
-        idx_2_symb = list(zip(ann.sample, ann.symbol))
-
-        # Get R-peak indicies
-        r_idxs = list((idx) for (idx, symb) in idx_2_symb if symb == "N")
-        # Get R-peak amplitudes
-        r_amps = list(r.p_signal[:, sig_idx][idx] for idx in r_idxs)
-        # Get R-peak amplitude statistics
-        r_max = np.amax(r_amps)
-        r_min = np.amin(r_amps)
-        r_median = np.median(r_amps)
-        r_mean = np.mean(r_amps)
-        r_var = np.var(r_amps)
-        r_std = np.std(r_amps)
-        signal_feature["R-peak"] = np.array(
-            [r_max, r_min, r_median, r_mean, r_var, r_std]
-        )
-
-        # Get P-wave peak indicies
-        p_idxs = list((idx) for (idx, symb) in idx_2_symb if symb == "p")
-        # Get P-wave peak ampitudes
-        p_amps = list(r.p_signal[:, sig_idx][idx] for idx in p_idxs)
-        # Get P-wave peak amplitude statistics
-        p_max = np.amax(p_amps)
-        p_min = np.amin(p_amps)
-        p_median = np.median(p_amps)
-        p_mean = np.mean(p_amps)
-        p_var = np.var(p_amps)
-        p_std = np.std(p_amps)
-        signal_feature["P-peak"] = np.array(
-            [p_max, p_min, p_median, p_mean, p_var, p_std]
-        )
-
-        # Get T-wave peak indicies
-        t_idxs = list((idx) for (idx, symb) in idx_2_symb if symb == "t")
-        # Get T-wave peak amplitudes
-        t_amps = list(r.p_signal[:, sig_idx][idx] for idx in t_idxs)
-        # Get T-wave peak amplitude statistics
-        t_max = np.amax(t_amps)
-        t_min = np.amin(t_amps)
-        t_median = np.median(t_amps)
-        t_mean = np.mean(t_amps)
-        t_var = np.var(t_amps)
-        t_std = np.std(t_amps)
-        signal_feature["T-peak"] = np.array(
-            [t_max, t_min, t_median, t_mean, t_var, t_std]
-        )
-
-        # Get heart rate as normal beats per minute (distance between R-peaks)
-        hr = list(r.fs / interval * 60 for interval in np.diff(r_idxs))
-        # Get heart rate statistics
-        hr_max = np.amax(hr)
-        hr_min = np.amin(hr)
-        hr_median = np.median(hr)
-        hr_mean = np.mean(hr)
-        hr_var = np.var(hr)
-        hr_std = np.std(hr)
-        signal_feature["HR"] = np.array(
-            [hr_max, hr_min, hr_median, hr_mean, hr_var, hr_std]
-        )
-
-        # Get the P-waveform durations, R-waveform durations, T-waveform durations
-        p_wave_durations = []
-        r_wave_durations = []
-        t_wave_durations = []
-        for idx in range(len(idx_2_symb) - 2):
-            s_idx, s_symb = idx_2_symb[idx]
-            _, m_symb = idx_2_symb[idx + 1]
-            e_idx, e_symb = idx_2_symb[idx + 2]
-
-            if s_symb == "(" and m_symb == "p" and e_symb == ")":
-                p_wave_durations.append((e_idx - s_idx) / r.fs)
-            elif s_symb == "(" and m_symb == "N" and e_symb == ")":
-                r_wave_durations.append((e_idx - s_idx) / r.fs)
-            elif s_symb == "(" and m_symb == "t" and e_symb == ")":
-                t_wave_durations.append((e_idx - s_idx) / r.fs)
-        p_wave_durations_max = np.amax(p_wave_durations)
-        p_wave_durations_min = np.amin(p_wave_durations)
-        p_wave_durations_median = np.median(p_wave_durations)
-        p_wave_durations_mean = np.mean(p_wave_durations)
-        p_wave_durations_var = np.var(p_wave_durations)
-        p_wave_durations_std = np.std(p_wave_durations)
-        signal_feature["P-wave"] = np.array(
-            [
-                p_wave_durations_max,
-                p_wave_durations_min,
-                p_wave_durations_median,
-                p_wave_durations_mean,
-                p_wave_durations_var,
-                p_wave_durations_std,
-            ]
-        )
-
-        r_wave_durations_max = np.amax(r_wave_durations)
-        r_wave_durations_min = np.amin(r_wave_durations)
-        r_wave_durations_median = np.median(r_wave_durations)
-        r_wave_durations_mean = np.mean(r_wave_durations)
-        r_wave_durations_var = np.var(r_wave_durations)
-        r_wave_durations_std = np.std(r_wave_durations)
-        signal_feature["R-wave"] = np.array(
-            [
-                r_wave_durations_max,
-                r_wave_durations_min,
-                r_wave_durations_median,
-                r_wave_durations_mean,
-                r_wave_durations_var,
-                r_wave_durations_std,
-            ]
-        )
-        t_wave_durations_max = np.amax(t_wave_durations)
-        t_wave_durations_min = np.amin(t_wave_durations)
-        t_wave_durations_median = np.median(t_wave_durations)
-        t_wave_durations_mean = np.mean(t_wave_durations)
-        t_wave_durations_var = np.var(t_wave_durations)
-        t_wave_durations_std = np.std(t_wave_durations)
-        signal_feature["T-wave"] = np.array(
-            [
-                t_wave_durations_max,
-                t_wave_durations_min,
-                t_wave_durations_median,
-                t_wave_durations_mean,
-                t_wave_durations_var,
-                t_wave_durations_std,
-            ]
-        )
-
-        # Get the PR-segment and ST-segment durations
-        pr_segment_durations = []
-        st_segment_durations = []
-        for idx in range(len(idx_2_symb) - 3):
-            _, s_symb = idx_2_symb[idx]
-            s_idx, m_symb = idx_2_symb[idx + 1]
-            e_idx, e_symb = idx_2_symb[idx + 2]
-            _, f_symb = idx_2_symb[idx + 3]
-            if s_symb == "p" and m_symb == ")" and e_symb == "(" and f_symb == "N":
-                pr_segment_durations.append((e_idx - s_idx) / r.fs)
-            elif s_symb == "N" and m_symb == ")" and e_symb == "(" and f_symb == "t":
-                st_segment_durations.append((e_idx - s_idx) / r.fs)
-
-        pr_segment_durations_max = np.amax(pr_segment_durations)
-        pr_segment_durations_min = np.amin(pr_segment_durations)
-        pr_segment_durations_median = np.median(pr_segment_durations)
-        pr_segment_durations_mean = np.mean(pr_segment_durations)
-        pr_segment_durations_var = np.var(pr_segment_durations)
-        pr_segment_durations_std = np.std(pr_segment_durations)
-        signal_feature["PR-segment"] = np.array(
-            [
-                pr_segment_durations_max,
-                pr_segment_durations_min,
-                pr_segment_durations_median,
-                pr_segment_durations_mean,
-                pr_segment_durations_var,
-                pr_segment_durations_std,
-            ]
-        )
-
-        st_segment_durations_max = np.amax(st_segment_durations)
-        st_segment_durations_min = np.amin(st_segment_durations)
-        st_segment_durations_median = np.median(st_segment_durations)
-        st_segment_durations_mean = np.mean(st_segment_durations)
-        st_segment_durations_var = np.var(st_segment_durations)
-        st_segment_durations_std = np.std(st_segment_durations)
-        signal_feature["ST-segment"] = np.array(
-            [
-                st_segment_durations_max,
-                st_segment_durations_min,
-                st_segment_durations_median,
-                st_segment_durations_mean,
-                st_segment_durations_var,
-                st_segment_durations_std,
-            ]
-        )
-
-        # Calculate the fast fourier transform on the signal, binned across 50 Hz
-        raw_sig = r.p_signal[:, sig_idx]
-        window_sig = windows.get_window("hann", len(raw_sig)) * raw_sig
+        # Calculate the fast fourier transform on the signal
+        window_sig = ss.windows.hann(seq_len) * r.p_signal[:, sig_idx]
         x_mag = scipy.absolute(scipy.fft(window_sig))
-
-        # Only keep 0hz to 50hz
-        end_idx = len(x_mag) // r.fs * 50
-        x_mag = x_mag[:end_idx]
-
+        x_mag = x_mag[: (len(x_mag) // sampling_rate * 50)]  # Only keep 0-50 Hz
         bins = {}
-        # 50 bins, one for each of the hz
-        num_bins = 50
+        num_bins = 50  # 50 bins, one for each of the hz
+        x_fft_bins = np.zeros(num_bins)
         for (magnitude, frequency) in zip(x_mag, np.linspace(0, num_bins, len(x_mag))):
             freq_idx = min(int(math.floor(frequency)), num_bins - 1)
             bin_vals = bins.get(freq_idx, [])
             bin_vals.append(magnitude)
             bins[freq_idx] = bin_vals
-
-        x_fft_bins = np.zeros(num_bins)
         for (frequency, magnitudes) in bins.items():
             x_fft_bins[frequency] = np.mean(magnitudes)
-
         signal_feature["FFT"] = x_fft_bins
-        return r.sig_name[sig_idx], signal_feature
-    except Exception:
-        return None, None
+
+        # Set the signal feature into the record features dictionary
+        features["sig"][lead_name] = signal_feature
+
+    return features
