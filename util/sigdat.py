@@ -244,6 +244,26 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
     return sig_idx, ann
 
 
+def _get_descriptive_stats(a):
+    """Get a numpy vector representing the scipy descriptive stats of the given iterable
+    """
+    desc_out = np.array([-1,] * 6)
+    try:
+        desc = scipy.stats.describe(a, axis=None)
+        desc_out = np.array(
+            [
+                desc.minmax[0],
+                desc.minmax[1],
+                desc.mean,
+                desc.variance,
+                desc.skewness,
+                desc.kurtosis,
+            ]
+        )
+    except Exception:
+        pass
+    return desc_out
+
 def extract_features(r, ann_dir=None):
     """
     Given a wfdb.Record, extract relevant features for classifier by signal name.
@@ -307,30 +327,30 @@ def extract_features(r, ann_dir=None):
     # Compare with each other, picking the one with the highest true positive count
     sig_ann_idxs = list(signal_annotations.keys())
     sig_ann_tp_count = {k: 0 for k in sig_ann_idxs}
-    lead_candidates = []
+    sig_ann_candidates = []
 
     for i0, k0 in enumerate(sig_ann_idxs):
         ann0 = signal_annotations[k0]
         for i1, k1 in enumerate(sig_ann_idxs[i0 + 1 :]):
             ann1 = signal_annotations[k1]
-            for r_symb in ANN_SYMBS:
-                r_idxs0 = np.array(
+            for ref_symb in ANN_SYMBS:
+                ref_idxs0 = np.array(
                     [
                         idx
                         for (idx, symb) in zip(ann0.sample, ann0.symbol)
-                        if symb == r_symb
+                        if symb == ref_symb
                     ]
                 )
-                r_idxs1 = np.array(
+                ref_idxs1 = np.array(
                     [
                         idx
                         for (idx, symb) in zip(ann1.sample, ann1.symbol)
-                        if symb == r_symb
+                        if symb == ref_symb
                     ]
                 )
                 try:
                     c = processing.compare_annotations(
-                        r_idxs0, r_idxs1, int(0.02 * r.fs)
+                        ref_idxs0, ref_idxs1, int(0.02 * r.fs)
                     )
                     sig_ann_tp_count[k0] += c.tp
                     sig_ann_tp_count[k1] += c.tp
@@ -340,15 +360,62 @@ def extract_features(r, ann_dir=None):
     for sig_idx, ann in signal_annotations.items():
         symb_counter = Counter(ann.symbol)
         candidate = True
-        for r_symb in ANN_SYMBS:
-            if symb_counter.get(r_symb, 0) < 2:
+        for ref_symb in ANN_SYMBS:
+            if symb_counter.get(ref_symb, 0) < 2:
                 candidate = False
                 break
         if candidate:
-            lead_candidates.append(sig_idx)
+            sig_ann_candidates.append(sig_idx)
 
-    # if this throws an Exception, not a single lead in the wfdb.Record is useable
-    fallback_lead = max(lead_candidates, key=(lambda k: sig_ann_tp_count[k]))
+    # WARNING: if this throws an Exception, not a single lead in the wfdb.Record is useable
+    fallback_ann_idx = max(sig_ann_candidates, key=(lambda k: sig_ann_tp_count[k]))
+
+    # Calculate basic statistical descriptors for each lead
+    # =====================================================
+    features["sig"] = OrderedDict()
+    for sig_idx, lead_name in enumerate(SIG_NAMES):
+        signal_feature = {}
+        ann = signal_annotations.get(sig_idx, signal_annotations[fallback_ann_idx])
+        idx_2_symb = list(zip(ann.sample, ann.symbol))
+
+        # Get P-wave peak indicies, amplitudes, stats
+        p_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "p"]
+        p_amps = [r.p_signal[:, sig_idx][idx] for idx in p_idxs]
+        signal_feature["P-peak"] = _get_descriptive_stats(p_amps)
+
+        # Get R-wave peak indicies, amplitudes, stats
+        r_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "N"]
+        r_amps = [r.p_signal[:, sig_idx][idx] for idx in r_idxs]
+        signal_feature["R-peak"] = _get_descriptive_stats(r_amps)
+
+        # Get T-wave peak indicies, amplitudes, stats
+        t_idxs = [(idx) for (idx, symb) in idx_2_symb if symb == "t"]
+        t_amps = [r.p_signal[:, sig_idx][idx] for idx in t_idxs]
+        signal_feature["T-peak"] = _get_descriptive_stats(t_amps)
+
+        # Get heart rate as normal beats per minute (distance between R-peaks)
+        hr = [sampling_rate / interval * 60 for interval in np.diff(r_idxs)]
+        signal_feature["HR"] = _get_descriptive_stats(hr)
+
+        # Calculate the P-wave, R-wave, T-wave duration
+        # PR segment, ST segment, PR interval, and ST interval
+        p_wave_dur = []   # (, p, ) # distance between ( and )
+        qrs_dur = []      # (, r, ) # distance between ( and )
+        t_wave_dur = []   # (, t, ) # distance between ( and )
+        pr_segment = []   # p, ), (, N # distance between ) and (
+        st_segment = []   # N, ), (, t # distance between ) and (
+        pr_interval = []  # (, p, ), (, N # distance between ( and (
+        st_interval = []  # N, ), (, t, ) # distance between ) and )
+
+        prev_lb_idx = 0
+        cur_lb_idx = 0
+        prev_rb_idx = 0
+        cur_rb_idx = 0
+
+        # TODO: rewrite jupyter lab code here but better
+
+        # Set the signal feature into the record features dictionary
+        features["sig"][lead_name] = signal_feature
 
     return features
 
