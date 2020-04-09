@@ -264,6 +264,93 @@ def _get_descriptive_stats(a):
         pass
     return desc_out
 
+
+def _calculate_durations(idx_2_symb, sampling_rate=500):
+    """Calculate all relevant ECG signal durations using pass through the symbol indicies
+
+    Parameters
+    ----------
+    idx_2_symb : Iterable
+        Contains (idx, symb) tuples, where symb in ["(", ")", "p", "N", "t"] and
+        idx is an integer >= 0 < seq_len. Nested/overlapping waveforms are not supported.
+    sampling_rate : int (optional)
+        Frequency of idx_2_symb sample indicies (Hz), defaults to 500
+    Returns
+    -------
+    all_durations : dict
+        Keys are tuples representing measurement, distance is always between parenthesis `(` and `)`, symbols are reference
+        Values are lists of times (reported as seconds according to sampling_rate)
+    """
+    all_durations = {}
+
+    prev_lb_idx = None  # When did the last waveform start
+    cur_lb_idx = None  # When does the current waveform start
+    prev_rb_idx = None  # When did the last waveform end
+    cur_rb_idx = None  # Where does the current waveform end
+    cur_wf_symbs = None  # What symbols are in the current waveform
+    prev_wf_symbs = None  # What symbols were in the last waveform
+
+    for (idx, symb) in idx_2_symb:
+        if symb == "(":
+            prev_lb_idx = cur_lb_idx
+            cur_lb_idx = idx
+            cur_wf_symbs = []
+        elif symb == ")":
+            # Waveform ended
+            prev_rb_idx = cur_rb_idx
+            cur_rb_idx = idx
+
+            # calculate durations
+            waveform_duration = (cur_rb_idx - cur_lb_idx) / sampling_rate
+            duration_key = "".join(cur_wf_symbs)
+            if duration_key == "":
+                duration_key = " "
+            durations = all_durations.get(("(", duration_key, ")"), [])
+            durations.append(waveform_duration)
+            all_durations[("(", duration_key, ")")] = durations
+
+            # calculate segments
+            if prev_wf_symbs:
+                prev_duration_key = "".join(prev_wf_symbs)
+                if prev_duration_key == "":
+                    prev_duration_key = " "
+
+                # lb_interval: `(, KEY, ), (, KEY` # from ( to (
+                lb_interval = (cur_lb_idx - prev_lb_idx) / sampling_rate
+                lb_intervals = all_durations.get(
+                    ("(", prev_duration_key, "(", duration_key), []
+                )
+                lb_intervals.append(lb_interval)
+                all_durations[
+                    ("(", prev_duration_key, "(", duration_key)
+                ] = lb_intervals
+
+                # rb_interval: `KEY, ), (, KEY, )` # from ) to )
+                rb_interval = (cur_rb_idx - prev_rb_idx) / sampling_rate
+                rb_intervals = all_durations.get(
+                    (prev_duration_key, ")", duration_key, ")"), []
+                )
+                rb_intervals.append(rb_interval)
+                all_durations[
+                    (prev_duration_key, ")", duration_key, ")")
+                ] = rb_intervals
+
+                # segment: `KEY, ), (, KEY` # from ) to (
+                segment = (cur_lb_idx - prev_rb_idx) / sampling_rate
+                segments = all_durations.get(
+                    (prev_duration_key, ")", "(", duration_key), []
+                )
+                segments.append(segment)
+                all_durations[(prev_duration_key, ")", "(", duration_key)] = segments
+
+            prev_wf_symbs = cur_wf_symbs
+        else:
+            # Define current waveform type
+            cur_wf_symbs.append(symb)
+
+    return all_durations
+
+
 def extract_features(r, ann_dir=None):
     """
     Given a wfdb.Record, extract relevant features for classifier by signal name.
@@ -276,6 +363,7 @@ def extract_features(r, ann_dir=None):
         If provided, write extracted ecgpuwave annotations here
     """
     features = OrderedDict(_parse_comment_lines(r.comments))
+    features["debug"] = {}
     _seq_len, num_signals = r.p_signal.shape
     record_name = r.record_name
     sampling_rate = r.fs
@@ -397,22 +485,42 @@ def extract_features(r, ann_dir=None):
         hr = [sampling_rate / interval * 60 for interval in np.diff(r_idxs)]
         signal_feature["HR"] = _get_descriptive_stats(hr)
 
-        # Calculate the P-wave, R-wave, T-wave duration
-        # PR segment, ST segment, PR interval, and ST interval
-        p_wave_dur = []   # (, p, ) # distance between ( and )
-        qrs_dur = []      # (, r, ) # distance between ( and )
-        t_wave_dur = []   # (, t, ) # distance between ( and )
-        pr_segment = []   # p, ), (, N # distance between ) and (
-        st_segment = []   # N, ), (, t # distance between ) and (
-        pr_interval = []  # (, p, ), (, N # distance between ( and (
-        st_interval = []  # N, ), (, t, ) # distance between ) and )
+        # Calculate the P-wave, R-wave, T-wave duration, PR & ST segment/interval
+        raw_durations = _calculate_durations(idx_2_symb, sampling_rate=sampling_rate)
+        # Get durations for P-wave, R-wave, T-wave TT-wave
+        signal_feature["P-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "p", ")"), [])
+        )
+        signal_feature["R-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "N", ")"), [])
+        )
+        signal_feature["T-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "t", ")"), [])
+        )
+        signal_feature["TT-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "tt", ")"), [])
+        )
+        # Get durations for PR & ST segments and intervals, treating 'tt' as 't'
+        signal_feature["PR-interval"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "p", "(", "N"), [])
+        )
+        signal_feature["PR-segment"] = _get_descriptive_stats(
+            raw_durations.pop(("p", ")", "(", "N"), [])
+        )
+        st_intervals = raw_durations.pop(("(", "N", "(", "t"), []) + raw_durations.pop(
+            ("(", "N", "(", "tt"), []
+        )
+        signal_feature["ST-interval"] = _get_descriptive_stats(st_intervals)
+        st_segments = raw_durations.pop(("N", ")", "(", "t"), []) + raw_durations.pop(
+            ("N", ")", "(", "tt"), []
+        )
+        signal_feature["ST-segment"] = _get_descriptive_stats(st_segments)
 
-        prev_lb_idx = 0
-        cur_lb_idx = 0
-        prev_rb_idx = 0
-        cur_rb_idx = 0
-
-        # TODO: rewrite jupyter lab code here but better
+        # Get the unique symbols, check for weird edgecases
+        unique_symbols = {key for keys in raw_durations.keys() for key in keys}
+        supported_symbols = {"(", ")", "p", "N", "t", "tt"}
+        unsupported_symbols = unique_symbols - supported_symbols
+        features["debug"]["unsupported_symbols"] = unsupported_symbols
 
         # Set the signal feature into the record features dictionary
         features["sig"][lead_name] = signal_feature
