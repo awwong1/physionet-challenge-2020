@@ -33,7 +33,7 @@ class FeatureExtractionAgent(BaseAgent):
                 input_files.append(f)
 
         self.input_files = tuple(sorted(input_files))
-        self.tqdm = tqdm(self.input_files, desc=f"Extracting {self.input_directory}")
+        self.tqdm = tqdm(self.input_files[1:], desc=f"Extracting {self.input_directory}")
 
     @staticmethod
     def proc_extract_features(input_file, input_dir="", output_dir=""):
@@ -68,8 +68,6 @@ class FeatureExtractionAgent(BaseAgent):
             return input_file, meta_payload
         except Exception as e:
             print("ERROR:", input_file)
-            print("ERROR:", input_file)
-            print("ERROR:", input_file)
             raise e
 
     def run(self):
@@ -79,14 +77,15 @@ class FeatureExtractionAgent(BaseAgent):
             output_dir=self.out_dir,
         )
 
-        with Pool(
-            len(os.sched_getaffinity(0)),
-            initializer=tqdm.set_lock,
-            initargs=(tqdm.get_lock(),),
-        ) as p:
-            meta = dict(p.imap_unordered(worker_fn, self.tqdm,))
+        # with Pool(
+        #     len(os.sched_getaffinity(0)),
+        #     initializer=tqdm.set_lock,
+        #     initargs=(tqdm.get_lock(),),
+        # ) as p:
+        #     meta = dict(p.imap_unordered(worker_fn, self.tqdm,))
+
         # single process
-        # meta = dict(worker_fn(rn) for rn in self.tqdm)
+        meta = dict(worker_fn(rn) for rn in self.tqdm)
 
         # do some logging for weirdness in the dataset
         for input_file, meta_payload in meta.items():

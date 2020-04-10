@@ -52,5 +52,13 @@
             "program": "${workspaceFolder}/scikit_fe_run_12ECG_classifier.py",
             "console": "integratedTerminal"
         },
+        {
+            "name": "Python: scikit_learn_simultaneous/base.json",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": ["configs/scikit_learn_simultaneous/base.json"],
+            "console": "integratedTerminal"
+        }
     ]
 }

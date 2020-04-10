@@ -243,8 +243,9 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
                     os.path.join(c_pth, f"{record_name}.atr{sig_idx}"),
                 )
             ann = _ann
-    except Exception:
+    except Exception as e:
         # ecgpuwave failed to annotate the signal
+        print(e)
         pass
     return sig_idx, ann
 
@@ -252,7 +253,7 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
 def _get_descriptive_stats(a):
     """Get a numpy vector representing the scipy descriptive stats of the given iterable
     """
-    desc_out = np.array([-1,] * 6)
+    desc_out = np.array([float("nan")] * 6)
     try:
         if len(a) > 0:
             desc = scipy.stats.describe(a, axis=None)
@@ -364,7 +365,7 @@ def _calculate_durations(idx_2_symb, sampling_rate=500):
     return all_durations
 
 
-def extract_features(r, ann_dir=None):
+def extract_features(r, ann_dir=None, nan_to_val = -1000):
     """
     Given a wfdb.Record, extract relevant features for classifier by signal name.
 
@@ -555,6 +556,10 @@ def extract_features(r, ann_dir=None):
         for (frequency, magnitudes) in bins.items():
             x_fft_bins[frequency] = np.mean(magnitudes)
         signal_feature["FFT"] = x_fft_bins
+
+        # convert all NaN to nan_to_val
+        for k, v in signal_feature:
+            signal_feature[k] = np.where(np.isnan(v), nan_to_val, v)
 
         # Set the signal feature into the record features dictionary
         features["sig"][lead_name] = signal_feature
