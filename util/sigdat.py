@@ -78,7 +78,7 @@ def convert_to_wfdb_record(data, header_data):
     byte_offset = signal_fields.get("byte_offset")
     if not byte_offset or len(byte_offset) != n_sig:
         # byte_offset = [24,] * n_sig
-        byte_offset = [0, ]* n_sig
+        byte_offset = [0,] * n_sig
 
     adc_gain = signal_fields.get("adc_gain")
     if not adc_gain or len(adc_gain) != n_sig:
@@ -117,7 +117,7 @@ def convert_to_wfdb_record(data, header_data):
     r = Record(
         # p_signal=data.T,
         d_signal=data.T.astype(int),
-        record_name=record_name, # record_name must only contain alphanumeric chars, not guaranteed
+        record_name=record_name,  # record_name must only contain alphanumeric chars, not guaranteed
         n_sig=n_sig,  # record_fields.get("n_sig", 12),
         fs=record_fields.get("fs", 500),
         counter_freq=record_fields.get("counter_freq"),
@@ -238,7 +238,10 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
             # if the write_dir is set, copy the annotation file there
             if write_dir:
                 os.makedirs(c_pth, exist_ok=True)
-                copy(f"{r_pth}.atr{sig_idx}", os.path.join(c_pth, f"{record_name}.atr{sig_idx}"))
+                copy(
+                    f"{r_pth}.atr{sig_idx}",
+                    os.path.join(c_pth, f"{record_name}.atr{sig_idx}"),
+                )
             ann = _ann
     except Exception:
         # ecgpuwave failed to annotate the signal
@@ -304,13 +307,14 @@ def _calculate_durations(idx_2_symb, sampling_rate=500):
             cur_rb_idx = idx
 
             # calculate durations
-            waveform_duration = (cur_rb_idx - cur_lb_idx) / sampling_rate
-            duration_key = "".join(cur_wf_symbs)
-            if duration_key == "":
-                duration_key = " "
-            durations = all_durations.get(("(", duration_key, ")"), [])
-            durations.append(waveform_duration)
-            all_durations[("(", duration_key, ")")] = durations
+            if cur_lb_idx is not None:
+                waveform_duration = (cur_rb_idx - cur_lb_idx) / sampling_rate
+                duration_key = "".join(cur_wf_symbs)
+                if duration_key == "":
+                    duration_key = " "
+                durations = all_durations.get(("(", duration_key, ")"), [])
+                durations.append(waveform_duration)
+                all_durations[("(", duration_key, ")")] = durations
 
             # calculate segments
             if prev_wf_symbs:
@@ -346,11 +350,15 @@ def _calculate_durations(idx_2_symb, sampling_rate=500):
                         (prev_duration_key, ")", "(", duration_key), []
                     )
                     segments.append(segment)
-                    all_durations[(prev_duration_key, ")", "(", duration_key)] = segments
+                    all_durations[
+                        (prev_duration_key, ")", "(", duration_key)
+                    ] = segments
 
             prev_wf_symbs = cur_wf_symbs
         else:
             # Define current waveform type
+            if cur_wf_symbs is None:
+                cur_wf_symbs = []
             cur_wf_symbs.append(symb)
 
     return all_durations
@@ -528,6 +536,9 @@ def extract_features(r, ann_dir=None):
         supported_symbols = {"(", ")", "p", "N", "t", "tt"}
         unsupported_symbols = unique_symbols - supported_symbols
         features["meta"]["unsupported_symbols"][lead_name] = unsupported_symbols
+        signal_feature["num_unsupported_symbols"] = np.array(
+            [len(unsupported_symbols),]
+        )
 
         # Calculate the fast fourier transform on the signal
         window_sig = ss.windows.hann(seq_len) * r.p_signal[:, sig_idx]

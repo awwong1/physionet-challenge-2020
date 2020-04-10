@@ -52,7 +52,8 @@ class DatConversionTest(unittest.TestCase):
 
     def test_extract_features(self):
         # tmp_input_file = os.path.join(self.input_directory, "A0001.mat")
-        tmp_input_file = os.path.join(self.input_directory, "A1140.mat")
+        # tmp_input_file = os.path.join(self.input_directory, "A1140.mat")
+        tmp_input_file = os.path.join(self.input_directory, "A3146.mat")
         data, headers = load_challenge_data(tmp_input_file)
         r = convert_to_wfdb_record(data, headers)
 
@@ -79,5 +80,6 @@ class DatConversionTest(unittest.TestCase):
                     "ST-interval",
                     "ST-segment",
                     "FFT",
+                    "num_unsupported_symbols"
                 ],
             )
