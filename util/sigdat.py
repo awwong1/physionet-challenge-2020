@@ -558,7 +558,7 @@ def extract_features(r, ann_dir=None, nan_to_val = -1000):
         signal_feature["FFT"] = x_fft_bins
 
         # convert all NaN to nan_to_val
-        for k, v in signal_feature:
+        for k, v in signal_feature.items():
             signal_feature[k] = np.where(np.isnan(v), nan_to_val, v)
 
         # Set the signal feature into the record features dictionary
