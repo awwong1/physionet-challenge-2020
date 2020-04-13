@@ -99,12 +99,12 @@ class ScikitLearnAgent(BaseAgent):
         if self.variance_threshold:
             self.classifier = Pipeline(
                 [
-                    VarianceThreshold(
+                    ("feature_selection", VarianceThreshold(
                         threshold=(
                             self.variance_threshold * (1 - self.variance_threshold)
                         )
-                    ),
-                    self.classifier,
+                    )),
+                    ("classifier", self.classifier),
                 ]
             )
         if self.use_multioutput:
