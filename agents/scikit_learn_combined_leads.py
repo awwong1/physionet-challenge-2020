@@ -5,6 +5,8 @@ from datetime import datetime
 
 import numpy as np
 from sklearn.multioutput import ClassifierChain, MultiOutputClassifier
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.pipeline import Pipeline
 
 from datasets import PhysioNet2020Dataset
 from util.config import init_class
@@ -90,12 +92,27 @@ class ScikitLearnAgent(BaseAgent):
         self.classifier = init_class(config["classifier"])
         self.classifier_name = config["classifier"]["name"].split(".")[-1]
 
+        self.variance_threshold = config.get("variance_threshold", None)
         self.use_multioutput = config.get("use_multioutput", False)
         self.classifier_chain_order = config.get("classifier_chain_order", None)
+
+        if self.variance_threshold:
+            self.classifier = Pipeline(
+                [
+                    VarianceThreshold(
+                        threshold=(
+                            self.variance_threshold * (1 - self.variance_threshold)
+                        )
+                    ),
+                    self.classifier,
+                ]
+            )
         if self.use_multioutput:
             self.classifier = MultiOutputClassifier(self.classifier, n_jobs=-1)
         if self.classifier_chain_order:
-            self.classifier = ClassifierChain(self.classifier, order=self.classifier_chain_order)
+            self.classifier = ClassifierChain(
+                self.classifier, order=self.classifier_chain_order
+            )
         self.logger.info(self.classifier)
 
     def run(self):
@@ -168,6 +185,8 @@ class ScikitLearnAgent(BaseAgent):
         self.logger.info(f"{self.cv_tag}/{mode} mean scores:")
 
         pipeline = ""
+        if self.variance_threshold:
+            pipeline += f"VarianceThreshold({self.variance_threshold})"
         if self.use_multioutput:
             pipeline += "MultiOutputClassifier"
         if self.classifier_chain_order:
@@ -183,7 +202,7 @@ class ScikitLearnAgent(BaseAgent):
             + f"{self.cv_tag}/{mode} | "
             + f"{scores[0]:.4f} | {scores[1]:.4f} | "
             + f"{scores[2]:.4f} | {scores[3]:.4f} | "
-            + f"{scores[4]:.4f} | {scores[5]:.4f} |\n"
+            + f"{scores[4]:.4f} | {scores[5]:.4f} |"
         )
 
         self.logger.info(header_line)

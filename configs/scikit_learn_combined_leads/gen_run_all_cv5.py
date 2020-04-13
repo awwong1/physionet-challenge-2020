@@ -8,8 +8,8 @@ import json
 
 CLASSIFIERS = (
     {"name": "sklearn.ensemble.RandomForestClassifier"},
-    # {"name": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis"},
-    # {"name": "sklearn.ensemble.GradientBoostingClassifier"},
+    {"name": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis"},
+    {"name": "sklearn.ensemble.GradientBoostingClassifier"},
 )
 
 
@@ -28,13 +28,15 @@ def gen_experiments(cls_idx, cls_config, val_offset):
         "exp_name": exp_name,
         "classifier": cls_config,
         "cross_validation": {"fold": 5, "val_offset": val_offset},
+        "variance_threshold": 0.85
     }
 
     # no pipeline augmentations
-    raw_override = json.dumps(override)
-    cmds.append(
-        " ".join(base_cmd + [json.dumps(raw_override),])
-    )
+    if cls_name == "RandomForestClassifier":
+        raw_override = json.dumps(override)
+        cmds.append(
+            " ".join(base_cmd + [json.dumps(raw_override),])
+        )
 
     # multioutput
     raw_multioutput_override = json.dumps({
