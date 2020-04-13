@@ -57,7 +57,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args": ["configs/scikit_learn_simultaneous/base.json"],
+            "args": ["configs/scikit_learn_combined_leads/base.json"],
             "console": "integratedTerminal"
         }
     ]

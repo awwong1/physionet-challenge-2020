@@ -4,8 +4,7 @@ import pickle
 from datetime import datetime
 
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.multioutput import ClassifierChain
+from sklearn.multioutput import ClassifierChain, MultiOutputClassifier
 
 from datasets import PhysioNet2020Dataset
 from util.config import init_class
@@ -88,16 +87,20 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-        # todo make this classifier configuration dependent?
-        self.classifier = RandomForestClassifier()
-        self.classifier_name = "RandomForestClassifier"
+        self.classifier = init_class(config["classifier"])
+        self.classifier_name = config["classifier"]["name"].split(".")[-1]
+
+        self.use_multioutput = config.get("use_multioutput", False)
+        self.classifier_chain_order = config.get("classifier_chain_order", None)
+        if self.use_multioutput:
+            self.classifier = MultiOutputClassifier(self.classifier, n_jobs=-1)
+        if self.classifier_chain_order:
+            self.classifier = ClassifierChain(self.classifier, order=self.classifier_chain_order)
         self.logger.info(self.classifier)
 
     def run(self):
-        inputs, targets = self.prepare_data(
-            self.train_records, mode="Training"
-        )
-        self.logger.info("Fit training data to classifier...")
+        inputs, targets = self.prepare_data(self.train_records, mode="Training")
+        self.logger.info(f"Fit training data to classifier {inputs.shape}...")
         start = datetime.now()
         self.classifier.fit(inputs, targets)
         self.logger.info(f"Took {datetime.now() - start}")
@@ -108,9 +111,7 @@ class ScikitLearnAgent(BaseAgent):
         self.logger.info(f"Took {datetime.now() - start}")
 
         if self.val_records:
-            inputs, targets = self.prepare_data(
-                self.val_records, mode="Validation"
-            )
+            inputs, targets = self.prepare_data(self.val_records, mode="Validation")
             self.logger.info("Scoring validation data...")
             start = datetime.now()
             self.evaluate_and_log(inputs, targets, mode="Validation")
@@ -133,7 +134,12 @@ class ScikitLearnAgent(BaseAgent):
     def load_data_cache(self, train_record):
         fp = os.path.join(self.data_dir, f"{train_record}.npz")
         data = np.load(fp)
-        raw_data = np.concatenate([data[k] for k in ScikitLearnAgent.LEADS])
+
+        # raw_data = np.concatenate([data[k] for k in ScikitLearnAgent.LEADS])
+        # only record sex (2) and age (1) once
+        raw_data = np.concatenate(
+            [data["I"][:3]] + [data[k][3:] for k in ScikitLearnAgent.LEADS]
+        )
 
         # enforce no nans
         input_data = np.where(np.isnan(raw_data), -10, raw_data)
@@ -149,7 +155,10 @@ class ScikitLearnAgent(BaseAgent):
         targets = np.stack(targets)
 
         # convert probabilities into positive label probability matrix
-        probabilities = np.stack([prob[:,1] for prob in probabilities]).T
+        try:
+            probabilities = np.stack([prob[:, 1] for prob in probabilities]).T
+        except IndexError:
+            probabilities = np.stack(probabilities)
 
         # accuracy, f_measure, f_beta, g_beta
         beta_score = compute_beta_score(targets, outputs)
@@ -157,23 +166,34 @@ class ScikitLearnAgent(BaseAgent):
         auc_score = compute_auc(targets, probabilities)
         scores = np.array(beta_score + auc_score)
         self.logger.info(f"{self.cv_tag}/{mode} mean scores:")
-        self.logger.info(
-            f"acc: {scores[0]} | f_measure: {scores[1]} | "
-            + f"f_beta: {scores[2]} | g_beta: {scores[3]} | "
-            + f"auroc: {scores[4]} | auprc: {scores[5]} "
+
+        pipeline = ""
+        if self.use_multioutput:
+            pipeline += "MultiOutputClassifier"
+        if self.classifier_chain_order:
+            pipeline += f"ClassifierChain(order={self.classifier_chain_order})"
+        if not pipeline:
+            pipeline = "None"
+
+        header_line = "| Classifier | Pipeline | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |"
+        hbreak_line = "|------------|----------|---------|----------|-----------|--------|--------|-------|-------|"
+
+        output_line = (
+            f"| {self.classifier_name} | {pipeline} | "
+            + f"{self.cv_tag}/{mode} | "
+            + f"{scores[0]:.4f} | {scores[1]:.4f} | "
+            + f"{scores[2]:.4f} | {scores[3]:.4f} | "
+            + f"{scores[4]:.4f} | {scores[5]:.4f} |\n"
         )
+
+        self.logger.info(header_line)
+        self.logger.info(hbreak_line)
+        self.logger.info(output_line)
 
         wp = os.path.join(self.output_dir, "scores.txt")
         file_exists = os.path.isfile(wp)
         with open(wp, "a") as f:
             if not file_exists:
-                f.write(
-                    "| Classifier | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |\n"
-                    + "|------------|---------|----------|-----------|--------|--------|-------|-------|\n"
-                )
-            f.write(
-                f"| {self.classifier_name} | {self.cv_tag}/{mode} | "
-                + f"{scores[0]:.4f} | {scores[1]:.4f} | "
-                + f"{scores[2]:.4f} | {scores[3]:.4f} | "
-                + f"{scores[4]:.4f} | {scores[5]:.4f} |\n"
-            )
+                f.write(header_line + "\n")
+                f.write(hbreak_line + "\n")
+            f.write(output_line + "\n")
