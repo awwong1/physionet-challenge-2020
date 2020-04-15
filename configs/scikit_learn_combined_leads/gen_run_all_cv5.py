@@ -7,9 +7,10 @@ import json
 
 
 CLASSIFIERS = (
-    {"name": "sklearn.ensemble.RandomForestClassifier"},
-    {"name": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis"},
-    {"name": "sklearn.ensemble.GradientBoostingClassifier"},
+    # {"name": "sklearn.ensemble.RandomForestClassifier"},
+    # {"name": "sklearn.discriminant_analysis.LinearDiscriminantAnalysis"},
+    # {"name": "sklearn.ensemble.GradientBoostingClassifier"},
+    {"name": "sklearn.ensemble.HistGradientBoostingClassifier"},
 )
 
 
@@ -28,25 +29,24 @@ def gen_experiments(cls_idx, cls_config, val_offset):
         "exp_name": exp_name,
         "classifier": cls_config,
         "cross_validation": {"fold": 5, "val_offset": val_offset},
-        "variance_threshold": 0.85
+        # "variance_threshold": 0.85
+        "select_from_model": {"name": "sklearn.ensemble.RandomForestClassifier"},
     }
 
     # no pipeline augmentations
     if cls_name == "RandomForestClassifier":
         raw_override = json.dumps(override)
-        cmds.append(
-            " ".join(base_cmd + [json.dumps(raw_override),])
-        )
+        cmds.append(" ".join(base_cmd + [json.dumps(raw_override),]))
 
     # multioutput
-    raw_multioutput_override = json.dumps({
-        **override,
-        "exp_name": f"PhysioNet2020/ScikitLearnSimultaneous_Multioutput/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
-        "use_multioutput": True,
-    })
-    cmds.append(
-        " ".join(base_cmd + [json.dumps(raw_multioutput_override),])
+    raw_multioutput_override = json.dumps(
+        {
+            **override,
+            "exp_name": f"PhysioNet2020/ScikitLearnSimultaneous_Multioutput/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
+            "use_multioutput": True,
+        }
     )
+    cmds.append(" ".join(base_cmd + [json.dumps(raw_multioutput_override),]))
 
     # classifier chain
     # for perm in itertools.permutations(range(9)):
@@ -58,15 +58,15 @@ def gen_experiments(cls_idx, cls_config, val_offset):
     #     cmds.append(
     #         base_cmd + [raw_chain_override,]
     #     )
-    perm = [3,8,7,6,5,4,0,1,2]
-    raw_chain_override = json.dumps({
-        **override,
-        "exp_name": f"PhysioNet2020/ScikitLearnSimultaneous_ClassifierChain-387654012/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
-        "classifier_chain_order": perm,
-    })
-    cmds.append(
-        " ".join(base_cmd + [json.dumps(raw_chain_override),])
+    perm = [3, 8, 7, 6, 5, 4, 0, 1, 2]
+    raw_chain_override = json.dumps(
+        {
+            **override,
+            "exp_name": f"PhysioNet2020/ScikitLearnSimultaneous_ClassifierChain-387654012/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
+            "classifier_chain_order": perm,
+        }
     )
+    cmds.append(" ".join(base_cmd + [json.dumps(raw_chain_override),]))
 
     return cmds
 

@@ -531,10 +531,25 @@ def extract_features(r, ann_dir=None, nan_to_val = -1000):
             ("N", ")", "(", "tt"), []
         )
         signal_feature["ST-segment"] = _get_descriptive_stats(st_segments)
-
+        # Add in frequently seen 'bad' durations into descriptive stats (Nt, ' ', pN, Np, NN)
+        signal_feature["Nt-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "Nt", ")"), [])
+        )
+        signal_feature["Nil-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", " ", ")"), [])
+        )
+        signal_feature["pN-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "pN", ")"), [])
+        )
+        signal_feature["Np-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "Np", ")"), [])
+        )
+        signal_feature["NN-wave"] = _get_descriptive_stats(
+            raw_durations.pop(("(", "NN", ")"), [])
+        )
         # Get the unique symbols, check for weird edgecases
         unique_symbols = {key for keys in raw_durations.keys() for key in keys}
-        supported_symbols = {"(", ")", "p", "N", "t", "tt"}
+        supported_symbols = {"(", ")", "p", "N", "t", "tt", "Nt", " ", "pN", "Np", "NN"}
         unsupported_symbols = unique_symbols - supported_symbols
         features["meta"]["unsupported_symbols"][lead_name] = unsupported_symbols
         signal_feature["num_unsupported_symbols"] = np.array(

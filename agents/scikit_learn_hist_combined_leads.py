@@ -4,10 +4,8 @@ import pickle
 from datetime import datetime
 
 import numpy as np
-from sklearn.multioutput import ClassifierChain, MultiOutputClassifier
 from sklearn.experimental import enable_hist_gradient_boosting  # noqa
-from sklearn.feature_selection import SelectFromModel, VarianceThreshold
-from sklearn.pipeline import Pipeline
+from sklearn.ensemble import HistGradientBoostingClassifier
 
 from datasets import PhysioNet2020Dataset
 from util.config import init_class
@@ -17,6 +15,9 @@ from . import BaseAgent
 
 
 class ScikitLearnAgent(BaseAgent):
+    """Custom logic for HistGradientBoostingClassifier, custom NaN support
+    """
+
     LEADS = (
         "I",
         "II",
@@ -32,6 +33,8 @@ class ScikitLearnAgent(BaseAgent):
         "V6",
     )
 
+    LABELS = ("AF", "I-AVB", "LBBB", "Normal", "RBBB", "PAC", "PVC", "STD", "STE")
+
     def __init__(self, config):
         super(ScikitLearnAgent, self).__init__(config)
 
@@ -41,8 +44,6 @@ class ScikitLearnAgent(BaseAgent):
         )
         self.output_dir = config["out_dir"]
         cross_validation = config.get("cross_validation", None)
-
-        self.serialize_model = config.get("serialize_model", False)
 
         if cross_validation:
             train_records, val_records = PhysioNet2020Dataset.split_names_cv(
@@ -84,53 +85,38 @@ class ScikitLearnAgent(BaseAgent):
         self.train_records = train_records
         self.val_records = val_records
 
-        self.classifier = init_class(config["classifier"])
-        self.classifier_name = config["classifier"]["name"].split(".")[-1]
-
-        self.variance_threshold = config.get("variance_threshold", None)
-        self.select_from_model = config.get("select_from_model", None)
         self.use_multioutput = config.get("use_multioutput", False)
         self.classifier_chain_order = config.get("classifier_chain_order", None)
+        self.convert_nans = config.get("convert_nans", False)
 
-        if self.variance_threshold:
-            self.classifier = Pipeline(
-                [
-                    (
-                        "feature_selection",
-                        VarianceThreshold(
-                            threshold=(
-                                self.variance_threshold * (1 - self.variance_threshold)
-                            )
-                        ),
-                    ),
-                    ("classifier", self.classifier),
-                ]
-            )
-        if self.select_from_model:
-            self.classifier = Pipeline(
-                [
-                    (
-                        "feature_selection",
-                        SelectFromModel(init_class(self.select_from_model)),
-                    ),
-                    ("classifier", self.classifier),
-                ]
-            )
+        self.classifiers = {
+            label: HistGradientBoostingClassifier() for label in ScikitLearnAgent.LABELS
+        }
+        self.classifier_name = "HistGradientBoostingClassifier"
 
-        if self.use_multioutput:
-            self.classifier = MultiOutputClassifier(self.classifier) #, n_jobs=-1)
-        if self.classifier_chain_order:
-            self.classifier = ClassifierChain(
-                self.classifier, order=self.classifier_chain_order
-            )
-        self.logger.info(self.classifier)
+        self.logger.info(self.classifiers["Normal"])
 
     def run(self):
         inputs, targets = self.prepare_data(self.train_records, mode="Training")
-        self.logger.info(f"Fit training data to classifier {inputs.shape}...")
-        start = datetime.now()
-        self.classifier.fit(inputs, targets)
-        self.logger.info(f"Took {datetime.now() - start}")
+        if self.use_multioutput:
+            for label_idx, label in enumerate(ScikitLearnAgent.LABELS):
+                self.logger.info(
+                    f"Fit training data {inputs.shape} to classifier {label}..."
+                )
+                start = datetime.now()
+                self.classifiers[label].fit(inputs, targets[:, label_idx])
+                self.logger.info(f"Took {datetime.now() - start}")
+        elif self.classifier_chain_order:
+            chain_inputs = inputs
+            for label_idx in self.classifier_chain_order:
+                label = ScikitLearnAgent.LABELS[label_idx]
+                self.logger.info(
+                    f"Fit training data {chain_inputs.shape} to classifier {label}..."
+                )
+                start = datetime.now()
+                self.classifiers[label].fit(chain_inputs, targets[:, label_idx])
+                self.logger.info(f"Took {datetime.now() - start}")
+                chain_inputs = np.concatenate([chain_inputs, self.classifiers[label].predict_proba(chain_inputs)], axis=1)
 
         self.logger.info("Scoring training data...")
         start = datetime.now()
@@ -143,9 +129,6 @@ class ScikitLearnAgent(BaseAgent):
             start = datetime.now()
             self.evaluate_and_log(inputs, targets, mode="Validation")
             self.logger.info(f"Took {datetime.now() - start}")
-
-    def finalize(self):
-        pass
 
     def prepare_data(self, records, mode="Training"):
         self.logger.info(f"Preparing {mode} data...")
@@ -168,27 +151,33 @@ class ScikitLearnAgent(BaseAgent):
             [data["I"][:3]] + [data[k][3:] for k in ScikitLearnAgent.LEADS]
         )
 
-        # enforce no nans
-        # if self.classifier_name == "HistGradientBoostingClassifier":
-        #     input_data = np.where(raw_data <= -1000, float("nan"), raw_data)
-        input_data = np.where(np.isnan(raw_data), -1000, raw_data)
+        if self.convert_nans:
+            raw_data = np.where(raw_data == -1000, float("nan"), raw_data)
 
         return (
-            input_data,
+            raw_data,
             data["target"],
         )
 
     def evaluate_and_log(self, inputs, targets, mode="Training"):
         # evaluate each individual lead classifier
-        probabilities = self.classifier.predict_proba(inputs)
-        outputs = self.classifier.predict(inputs)
-        targets = np.stack(targets)
+        probabilities = {}
+        outputs = {}
+        if self.use_multioutput:
+            for label_idx, label in enumerate(ScikitLearnAgent.LABELS):
+                probabilities[label] = self.classifiers[label].predict_proba(inputs)
+                outputs[label] = self.classifiers[label].predict(inputs)
+        elif self.classifier_chain_order:
+            chain_inputs = inputs
+            for label_idx in self.classifier_chain_order:
+                label = ScikitLearnAgent.LABELS[label_idx]
+                probabilities[label] = self.classifiers[label].predict_proba(chain_inputs)
+                outputs[label] = self.classifiers[label].predict(chain_inputs)
+                chain_inputs = np.concatenate([chain_inputs, probabilities[label]], axis=1)
 
-        # convert probabilities into positive label probability matrix
-        try:
-            probabilities = np.stack([prob[:, 1] for prob in probabilities]).T
-        except IndexError:
-            probabilities = np.stack(probabilities)
+        probabilities = np.stack([probabilities[label][:, 1] for label in self.LABELS]).T
+        outputs = np.stack([outputs[label] for label in self.LABELS]).T
+        targets = np.stack(targets)
 
         # accuracy, f_measure, f_beta, g_beta
         beta_score = compute_beta_score(targets, outputs)
@@ -198,16 +187,12 @@ class ScikitLearnAgent(BaseAgent):
         self.logger.info(f"{self.cv_tag}/{mode} mean scores:")
 
         pipeline = ""
-        if self.variance_threshold:
-            pipeline += f"VarianceThreshold({self.variance_threshold})"
-        if self.select_from_model:
-            pipeline += f"SelectFromModel({self.select_from_model['name']})"
         if self.use_multioutput:
-            pipeline += "MultiOutputClassifier"
-        if self.classifier_chain_order:
-            pipeline += f"ClassifierChain(order={self.classifier_chain_order})"
-        if not pipeline:
-            pipeline = "None"
+            pipeline += "CustomMultiOutput"
+        elif self.classifier_chain_order:
+            pipeline += f"CustomChain(order={self.classifier_chain_order})"
+        if self.convert_nans:
+            pipeline += "-NaN"
 
         header_line = "| Classifier | Pipeline | Dataset | Accuracy | F_Measure | F_Beta | G_Beta | AUROC | AUPRC |"
         hbreak_line = "|------------|----------|---------|----------|-----------|--------|--------|-------|-------|"

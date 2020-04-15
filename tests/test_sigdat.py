@@ -8,7 +8,7 @@ from driver import load_challenge_data
 from util.sigdat import convert_to_wfdb_record, extract_features
 
 
-class DatConversionTest(unittest.TestCase):
+class SigDatTest(unittest.TestCase):
     def setUp(self):
         self.input_directory = "Training_WFDB"
         input_files = []
@@ -81,6 +81,11 @@ class DatConversionTest(unittest.TestCase):
                     "PR-segment",
                     "ST-interval",
                     "ST-segment",
+                    "Nt-wave",
+                    "Nil-wave",
+                    "pN-wave",
+                    "Np-wave",
+                    "NN-wave",
                     "FFT",
                     "num_unsupported_symbols"
                 ],
