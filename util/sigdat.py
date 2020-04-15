@@ -190,7 +190,7 @@ def _parse_comment_lines(comments=[]):
     return comment_features
 
 
-def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
+def run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
     """
     Call the ecgpuwave fortran binary.
 
@@ -250,13 +250,13 @@ def _run_ecgpuwave(sig_idx, record_name=None, temp_dir=None, write_dir=""):
     return sig_idx, ann
 
 
-def _get_descriptive_stats(a):
+def _get_descriptive_stats(a, axis=None):
     """Get a numpy vector representing the scipy descriptive stats of the given iterable
     """
     desc_out = np.array([float("nan")] * 6)
     try:
         if len(a) > 0:
-            desc = scipy.stats.describe(a, axis=None)
+            desc = scipy.stats.describe(a, axis=axis)
             desc_out = np.array(
                 [
                     desc.minmax[0],
@@ -365,7 +365,7 @@ def _calculate_durations(idx_2_symb, sampling_rate=500):
     return all_durations
 
 
-def extract_features(r, ann_dir=None, nan_to_val = -1000):
+def extract_features(r, ann_dir=None, poly_fit_deg=18):
     """
     Given a wfdb.Record, extract relevant features for classifier by signal name.
 
@@ -403,7 +403,7 @@ def extract_features(r, ann_dir=None, nan_to_val = -1000):
         r.dac(inplace=True)
 
         worker_fn = partial(
-            _run_ecgpuwave,
+            run_ecgpuwave,
             record_name=record_name,
             temp_dir=temp_dir,
             write_dir=ann_dir,
@@ -572,9 +572,29 @@ def extract_features(r, ann_dir=None, nan_to_val = -1000):
             x_fft_bins[frequency] = np.mean(magnitudes)
         signal_feature["FFT"] = x_fft_bins
 
-        # convert all NaN to nan_to_val
-        for k, v in signal_feature.items():
-            signal_feature[k] = np.where(np.isnan(v), nan_to_val, v)
+        # Try to fit a high order polynomial function to a window around the r_wave
+        lead_signal = r.p_signal[:, sig_idx]
+        r_peak_windows = []
+        r_wave_window = sampling_rate // 5
+        for r_idx in r_idxs:
+            start = r_idx - (r_wave_window // 2)
+            end = r_idx + (r_wave_window // 2)
+            if start < 0:
+                end += abs(start)
+                start += abs(start)
+            if end > len(lead_signal):
+                start -= end - len(lead_signal)
+                end -= end - len(lead_signal)
+
+            if (end - start != r_wave_window):
+                continue
+
+            r_peak_windows.append(lead_signal[start:end])
+
+        y = np.stack(r_peak_fit_sigs).T
+        x = np.linspace(0, 1, len(y))
+        poly = np.polyfit(x, y, 18)
+        poly_stats = _get_descriptive_stats(poly, axis=-1)
 
         # Set the signal feature into the record features dictionary
         features["sig"][lead_name] = signal_feature
