@@ -18,19 +18,25 @@ def gen_experiments(cls_idx, cls_config, val_offset):
         "--override",
     ]
     cls_name = cls_config["name"].split(".")[-1]
-    exp_name = f"PhysioNet2020/ScikitLearnHistSimultaneous_CustomMultioutput/{cls_idx:02}-{cls_name}/cv5-{val_offset}"
+    exp_name = f"PhysioNet2020/ScikitLearnHistSimultaneous_Custom/{cls_idx:02}-{cls_name}/cv5-{val_offset}"
 
     override = {
-        "exp_name": exp_name,
+        "exp_name": f"PhysioNet2020/ScikitLearnHistSimultaneous_CustomChain/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
         "classifier": cls_config,
         "cross_validation": {"fold": 5, "val_offset": val_offset},
-        # "variance_threshold": 0.85
-        # "select_from_model": {"name": "sklearn.ensemble.RandomForestClassifier"},
-        "classifier_chain_order": [3, 8, 7, 6, 5, 4, 0, 1, 2],
-        "convert_nans": False
+        # ("AF", "I-AVB", "LBBB", "Normal", "RBBB", "PAC", "PVC", "STD", "STE")
+        "classifier_chain_order": [3, 1, 2, 4, 7, 8, 5, 6, 0]
     }
+    raw_override = json.dumps(override)
+    cmds.append(" ".join(base_cmd + [json.dumps(raw_override),]))
 
-    # no pipeline augmentations
+    override = {
+        "exp_name": f"PhysioNet2020/ScikitLearnHistSimultaneous_CustomMultioutput/{cls_idx:02}-{cls_name}/cv5-{val_offset}",
+        "classifier": cls_config,
+        "cross_validation": {"fold": 5, "val_offset": val_offset},
+        # "classifier_chain_order": [3, 1, 2, 4, 7, 8, 5, 6, 0]
+        "use_multioutput": True
+    }
     raw_override = json.dumps(override)
     cmds.append(" ".join(base_cmd + [json.dumps(raw_override),]))
 

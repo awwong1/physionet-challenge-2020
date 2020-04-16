@@ -591,10 +591,21 @@ def extract_features(r, ann_dir=None, poly_fit_deg=18):
 
             r_peak_windows.append(lead_signal[start:end])
 
-        y = np.stack(r_peak_fit_sigs).T
+        y = np.stack(r_peak_windows).T
         x = np.linspace(0, 1, len(y))
         poly = np.polyfit(x, y, 18)
-        poly_stats = _get_descriptive_stats(poly, axis=-1)
+        desc = scipy.stats.describe(poly, axis=1)
+        poly_desc_out = np.array(
+            [
+                desc.minmax[0],
+                desc.minmax[1],
+                desc.mean,
+                desc.variance,
+                desc.skewness,
+                desc.kurtosis,
+            ]
+        ).flatten()
+        signal_feature["polyfit_18"] = poly_desc_out
 
         # Set the signal feature into the record features dictionary
         features["sig"][lead_name] = signal_feature

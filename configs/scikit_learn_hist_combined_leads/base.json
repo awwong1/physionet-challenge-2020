@@ -3,6 +3,7 @@
   "exp_name": "PhysioNet2020/ScikitLearnHistSimultaneous_CustomMultioutput/00-HistGradientBoostingClassifier/cv5-0",
   "out_dir": "experiments/PhysioNet2020/ScikitLearnCombinedLeads/out",
   "data_dir": "experiments/PhysioNet2020/ecgpuwave-FeatureExtraction/out",
+  "classifier": {"name": "sklearn.ensemble.HistGradientBoostingClassifier"},
   "cross_validation": {
     "fold": 5,
     "val_offset": 0

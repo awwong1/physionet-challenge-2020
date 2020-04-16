@@ -87,6 +87,7 @@ class SigDatTest(unittest.TestCase):
                     "Np-wave",
                     "NN-wave",
                     "FFT",
+                    "polyfit_18",
                     "num_unsupported_symbols"
                 ],
             )
