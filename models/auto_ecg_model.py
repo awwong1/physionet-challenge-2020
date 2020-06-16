@@ -1,7 +1,7 @@
-from tensorflow.keras.layers import (Input, Conv1D, MaxPooling1D, Dropout,
+from keras.layers import (Input, Conv1D, MaxPooling1D, Dropout,
                           BatchNormalization, Activation, Add,
                           Flatten, Dense)
-from tensorflow.keras.models import Model
+from keras.models import Model
 import numpy as np
 
 
@@ -82,9 +82,9 @@ class ResidualUnit(object):
     def __call__(self, inputs):
         """Residual unit."""
         x, y = inputs
-        n_samples_in = y.shape[1]
+        n_samples_in = y.shape[1].value
         downsample = n_samples_in // self.n_samples_out
-        n_filters_in = y.shape[2]
+        n_filters_in = y.shape[2].value
         y = self._skip_connection(y, downsample, n_filters_in)
         # 1st layer
         x = Conv1D(self.n_filters_out, self.kernel_size, padding='same',
@@ -124,12 +124,17 @@ x = Conv1D(64, kernel_size, padding='same', use_bias=False,
            kernel_initializer=kernel_initializer)(x)
 x = BatchNormalization()(x)
 x = Activation('relu')(x)
-x, y = ResidualUnit(1024, 128, kernel_size=kernel_size, kernel_initializer=kernel_initializer)([x, x])
-x, y = ResidualUnit(256, 196, kernel_size=kernel_size, kernel_initializer=kernel_initializer)([x, y])
-x, y = ResidualUnit(64, 256, kernel_size=kernel_size, kernel_initializer=kernel_initializer)([x, y])
-x, _ = ResidualUnit(16, 320, kernel_size=kernel_size, kernel_initializer=kernel_initializer)([x, y])
+x, y = ResidualUnit(1024, 128, kernel_size=kernel_size,
+                    kernel_initializer=kernel_initializer)([x, x])
+x, y = ResidualUnit(256, 196, kernel_size=kernel_size,
+                    kernel_initializer=kernel_initializer)([x, y])
+x, y = ResidualUnit(64, 256, kernel_size=kernel_size,
+                    kernel_initializer=kernel_initializer)([x, y])
+x, _ = ResidualUnit(16, 320, kernel_size=kernel_size,
+                    kernel_initializer=kernel_initializer)([x, y])
 x = Flatten()(x)
-diagn = Dense(8, activation='sigmoid', kernel_initializer=kernel_initializer)(x)
+# diagn = Dense(6, activation='sigmoid', kernel_initializer=kernel_initializer)(x)
+diagn = Dense(9, activation='sigmoid', kernel_initializer=kernel_initializer)(x)
 model = Model(signal, diagn)
 # ----------------- #
 
