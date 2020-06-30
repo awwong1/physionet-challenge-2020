@@ -1,4 +1,31 @@
-# Example Python classifier for the PhysioNet/CinC Challenge 2020
+# Python Classifier Submission for PhysioNet/CinC Challenge 2020
+
+Source code for the [PhysioNet/CinC Challenge 2020](https://physionetchallenges.github.io/2020/). Extends the [Python Classifier Template](https://github.com/physionetchallenges/python-classifier-2020).
+
+## Team Details
+
+Team name: **CVC**
+
+- Alexander William Wong <[alex.wong@ualberta.ca](mailto:alex.wong@ualberta.ca)>
+    - University of Alberta
+- Weijie Sun <[weijie2@ualberta.ca](mailto:weijie2@ualberta.ca)>
+    - Canadian Vigour Centre
+- Sunil Kalmady Vasu <[kalmady@ualberta.ca](mailto:kalmady@ualberta.ca)>
+    - Canadian Vigour Centre
+- Padma Kaul <[pkaul@ualberta.ca](mailto:pkaul@ualberta.ca)>
+    - Canadian Vigour Centre
+- Abram Hindle <[abram.hindle@ualberta.ca](mailto:abram.hindle@ualberta.ca)>
+    - University of Alberta
+
+## Getting Started
+
+All of the raw training data is available from [this discussion post](https://groups.google.com/d/msg/physionet-challenges/0ldKZgDGi0Y/sDPltA-EBAAJ).
+
+- Download and extract the training data.
+    ```bash
+    cd data
+    ./quickstart.sh
+    ```
 
 ## Contents
 

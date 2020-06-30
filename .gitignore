@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Don't upload the training data
+data/PhysioNetChallenge2020_Training*.tar.gz
+data/**/*.hea
+data/**/*.mat
