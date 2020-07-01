@@ -1,0 +1,494 @@
+{
+    "270492004": [
+        "IAVB",
+        "1st degree av block"
+    ],
+    "195042002": [
+        "IIAVB",
+        "2nd degree av block"
+    ],
+    "61277005": [
+        "AIVR",
+        "accelerated idioventricular rhythm"
+    ],
+    "426664006": [
+        "AJR",
+        "accelerated junctional rhythm"
+    ],
+    "413444003": [
+        "AMIs",
+        "acute myocardial ischemia"
+    ],
+    "426434006": [
+        "AnMIs",
+        "anterior ischemia"
+    ],
+    "54329005": [
+        "AnMI",
+        "anterior myocardial infarction"
+    ],
+    "164889003": [
+        "AF",
+        "atrial fibrillation"
+    ],
+    "195080001": [
+        "AFAFL",
+        "atrial fibrillation and flutter"
+    ],
+    "164890007": [
+        "AFL",
+        "atrial flutter"
+    ],
+    "195126007": [
+        "AH",
+        "atrial hypertrophy"
+    ],
+    "251268003": [
+        "AP",
+        "atrial pacing pattern"
+    ],
+    "713422000": [
+        "ATach",
+        "atrial tachycardia"
+    ],
+    "233917008": [
+        "AVB",
+        "av block"
+    ],
+    "251170000": [
+        "BPAC",
+        "blocked premature atrial contraction"
+    ],
+    "74615001": [
+        "BTS",
+        "brady tachy syndrome"
+    ],
+    "426627000": [
+        "Brady",
+        "bradycardia"
+    ],
+    "418818005": [
+        "Brug",
+        "brugada syndrome"
+    ],
+    "6374002": [
+        "BBB",
+        "bundle branch block"
+    ],
+    "426749004": [
+        "CAF",
+        "chronic atrial fibrillation"
+    ],
+    "413844008": [
+        "CMIs",
+        "chronic myocardial ischemia"
+    ],
+    "78069008": [
+        "CRPC",
+        "chronic rheumatic pericarditis"
+    ],
+    "27885002": [
+        "CHB",
+        "complete heart block"
+    ],
+    "713427006": [
+        "CRBBB",
+        "complete right bundle branch block"
+    ],
+    "77867006": [
+        "SQT",
+        "decreased qt interval"
+    ],
+    "82226007": [
+        "DIVB",
+        "diffuse intraventricular block"
+    ],
+    "428417006": [
+        "ERe",
+        "early repolarization"
+    ],
+    "251143007": [
+        "ART",
+        "ecg artefacts"
+    ],
+    "29320008": [
+        "ER",
+        "ectopic rhythm"
+    ],
+    "423863005": [
+        "EA",
+        "electrical alternans"
+    ],
+    "251259000": [
+        "HTV",
+        "high t voltage"
+    ],
+    "251120003": [
+        "ILBBB",
+        "incomplete left bundle branch block"
+    ],
+    "713426002": [
+        "IRBBB",
+        "incomplete right bundle branch block"
+    ],
+    "251200008": [
+        "ICA",
+        "indeterminate cardiac axis"
+    ],
+    "425419005": [
+        "IIs",
+        "inferior ischaemia"
+    ],
+    "704997005": [
+        "ISTD",
+        "inferior st segment depression"
+    ],
+    "50799005": [
+        "IAVD",
+        "isorhythmic dissociation"
+    ],
+    "426995002": [
+        "JE",
+        "junctional escape"
+    ],
+    "251164006": [
+        "JPC",
+        "junctional premature complex"
+    ],
+    "426648003": [
+        "JTach",
+        "junctional tachycardia"
+    ],
+    "425623009": [
+        "LIs",
+        "lateral ischaemia"
+    ],
+    "445118002": [
+        "LAnFB",
+        "left anterior fascicular block"
+    ],
+    "253352002": [
+        "LAA",
+        "left atrial abnormality"
+    ],
+    "67741000119109": [
+        "LAE",
+        "left atrial enlargement"
+    ],
+    "446813000": [
+        "LAH",
+        "left atrial hypertrophy"
+    ],
+    "39732003": [
+        "LAD",
+        "left axis deviation"
+    ],
+    "164909002": [
+        "LBBB",
+        "left bundle branch block"
+    ],
+    "445211001": [
+        "LPFB",
+        "left posterior fascicular block"
+    ],
+    "164873001": [
+        "LVH",
+        "left ventricular hypertrophy"
+    ],
+    "370365005": [
+        "LVS",
+        "left ventricular strain"
+    ],
+    "251146004": [
+        "LQRSV",
+        "low qrs voltages"
+    ],
+    "251147008": [
+        "LQRSVLL",
+        "low qrs voltages in the limb leads"
+    ],
+    "251148003": [
+        "LQRSP",
+        "low qrs voltages in the precordial leads"
+    ],
+    "28189009": [
+        "MoII",
+        "mobitz type 2 second degree atrioventricular block"
+    ],
+    "54016002": [
+        "MoI",
+        "mobitz type i wenckebach atrioventricular block"
+    ],
+    "713423005": [
+        "MATach",
+        "multifocal atrial tachycardia"
+    ],
+    "164865005": [
+        "MI",
+        "myocardial infarction"
+    ],
+    "164861001": [
+        "MIs",
+        "myocardial ischemia"
+    ],
+    "65778007": [
+        "NSIACB",
+        "non-specific interatrial conduction block"
+    ],
+    "698252002": [
+        "NSIVCB",
+        "nonspecific intraventricular conduction disorder"
+    ],
+    "428750005": [
+        "NSSTTA",
+        "nonspecific st t abnormality"
+    ],
+    "164867002": [
+        "OldMI",
+        "old myocardial infarction"
+    ],
+    "10370003": [
+        "PR",
+        "pacing rhythm"
+    ],
+    "67198005": [
+        "PSVT",
+        "paroxysmal supraventricular tachycardia"
+    ],
+    "164903001": [
+        "PAVB21",
+        "partial atrioventricular block 2:1"
+    ],
+    "284470004": [
+        "PAC",
+        "premature atrial contraction"
+    ],
+    "164884008": [
+        "PVC",
+        "premature ventricular complexes"
+    ],
+    "427172004": [
+        "PVC",
+        "premature ventricular contractions"
+    ],
+    "111975006": [
+        "LQT",
+        "prolonged qt interval"
+    ],
+    "164917005": [
+        "QAb",
+        "qwave abnormal"
+    ],
+    "164921003": [
+        "RAb",
+        "r wave abnormal"
+    ],
+    "253339007": [
+        "RAAb",
+        "right atrial abnormality"
+    ],
+    "446358003": [
+        "RAH",
+        "right atrial hypertrophy"
+    ],
+    "47665007": [
+        "RAD",
+        "right axis deviation"
+    ],
+    "59118001": [
+        "RBBB",
+        "right bundle branch block"
+    ],
+    "89792004": [
+        "RVH",
+        "right ventricular hypertrophy"
+    ],
+    "55930002": [
+        "STC",
+        "s t changes"
+    ],
+    "49578007": [
+        "SPRI",
+        "shortened pr interval"
+    ],
+    "427393009": [
+        "SA",
+        "sinus arrhythmia"
+    ],
+    "426177001": [
+        "SB",
+        "sinus bradycardia"
+    ],
+    "426783006": [
+        "SNR",
+        "sinus rhythm"
+    ],
+    "427084000": [
+        "STach",
+        "sinus tachycardia"
+    ],
+    "429622005": [
+        "STD",
+        "st depression"
+    ],
+    "164931005": [
+        "STE",
+        "st elevation"
+    ],
+    "164930006": [
+        "STIAb",
+        "st interval abnormal"
+    ],
+    "63593006": [
+        "SVPB",
+        "supraventricular premature beats"
+    ],
+    "426761007": [
+        "SVT",
+        "supraventricular tachycardia"
+    ],
+    "251139008": [
+        "ALR",
+        "suspect arm ecg leads reversed"
+    ],
+    "164934002": [
+        "TAb",
+        "t wave abnormal"
+    ],
+    "59931005": [
+        "TInv",
+        "t wave inversion"
+    ],
+    "251242005": [
+        "UTall",
+        "tall u wave"
+    ],
+    "164937009": [
+        "UAb",
+        "u wave abnormal"
+    ],
+    "11157007": [
+        "VBig",
+        "ventricular bigeminy"
+    ],
+    "17338001": [
+        "VEB",
+        "ventricular ectopic beats"
+    ],
+    "75532003": [
+        "VEsB",
+        "ventricular escape beat"
+    ],
+    "81898007": [
+        "VEsR",
+        "ventricular escape rhythm"
+    ],
+    "164896001": [
+        "VF",
+        "ventricular fibrillation"
+    ],
+    "111288001": [
+        "VFL",
+        "ventricular flutter"
+    ],
+    "266249003": [
+        "VH",
+        "ventricular hypertrophy"
+    ],
+    "251266004": [
+        "VPP",
+        "ventricular pacing pattern"
+    ],
+    "195060002": [
+        "VPEx",
+        "ventricular pre excitation"
+    ],
+    "164895002": [
+        "VTach",
+        "ventricular tachycardia"
+    ],
+    "251180001": [
+        "VTrig",
+        "ventricular trigeminy"
+    ],
+    "195101003": [
+        "WAP",
+        "wandering atrial pacemaker"
+    ],
+    "74390002": [
+        "WPW",
+        "wolff parkinson white pattern"
+    ],
+    "368009": [
+        "_hvd",
+        "Heart valve disorder"
+    ],
+    "204384007": [
+        "_ciahb",
+        "Congenital incomplete atrioventricular heart block "
+    ],
+    "84114007": [
+        "_hf",
+        "Heart failure (disorder)"
+    ],
+    "266257000": [
+        "_tci",
+        "Transient cerebral ischaemia"
+    ],
+    "49260003": [
+        "_ir",
+        "Idioventricular rhythm (disorder)"
+    ],
+    "53741008": [
+        "_ca",
+        "Coronary arteriosclerosis (disorder)"
+    ],
+    "13640000": [
+        "_fb",
+        "Fusion beats (disorder)"
+    ],
+    "314208002": [
+        "_raf",
+        "Rapid atrial fibrillation (disorder)"
+    ],
+    "425856008": [
+        "_epvt",
+        "Electrocardiogram: paroxysmal ventricular tachycardia (finding)"
+    ],
+    "251182009": [
+        "_pvpc",
+        "Paired ventricular premature complexes"
+    ],
+    "282825002": [
+        "_paf",
+        "Paroxysmal atrial fibrillation (disorder)"
+    ],
+    "60423000": [
+        "_snd",
+        "Sinus node dysfunction (disorder)"
+    ],
+    "251168009": [
+        "_sb",
+        "Supraventricular bigeminy"
+    ],
+    "251173003": [
+        "_ab",
+        "Atrial bigeminy"
+    ],
+    "698247007": [
+        "_ca2",
+        "Cardiac arrhythmia"
+    ],
+    "164951009": [
+        "_eqrsca",
+        "ECG: QRS complex abnormal"
+    ],
+    "57054005": [
+        "_ami",
+        "Acute myocardial infarction (disorder)"
+    ],
+    "164947007": [
+        "LPR",
+        "Prolonged PR interval"
+    ]
+}

@@ -20,12 +20,25 @@ Team name: **CVC**
 ## Getting Started
 
 All of the raw training data is available from [this discussion post](https://groups.google.com/d/msg/physionet-challenges/0ldKZgDGi0Y/sDPltA-EBAAJ).
-
+- Retrieve the evaluation code
+    ```bash
+    git submodule update --init --recursive
+    ```
+- Create a python3 virtual environment and install the required dependencies.
+    ```bash
+    python3 -m venv env
+    source env/bin/activate
+    pip install -r requirements.txt
+    ```
 - Download and extract the training data.
     ```bash
     cd data
     ./quickstart.sh
     ```
+
+# Example Classifier
+
+TODO: Update source code with proper submission attempt.
 
 ## Contents
 

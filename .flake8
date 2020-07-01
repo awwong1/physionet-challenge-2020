@@ -1,0 +1,3 @@
+[flake8]
+ignore = E501,E741
+exclude = evaluation-2020/*.py, util/evaluate_12ECG_score.py
