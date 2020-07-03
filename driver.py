@@ -6,7 +6,6 @@ from run_12ECG_classifier import load_12ECG_model, run_12ECG_classifier
 
 def load_challenge_data(filename):
 
-
     x = loadmat(filename)
     data = np.asarray(x['val'], dtype=np.float64)
 
@@ -35,8 +34,8 @@ def save_challenge_predictions(output_directory,filename,scores,labels,classes):
     with open(output_file, 'w') as f:
         f.write(recording_string + '\n' + class_string + '\n' + label_string + '\n' + score_string + '\n')
 
-  
-# Find unique number of classes  
+
+# Find unique number of classes
 def get_classes(input_directory,files):
 
     classes=set()
@@ -54,11 +53,12 @@ def get_classes(input_directory,files):
 
 if __name__ == '__main__':
     # Parse arguments.
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 4:
         raise Exception('Include the input and output directories as arguments, e.g., python driver.py input output.')
 
-    input_directory = sys.argv[1]
-    output_directory = sys.argv[2]
+    model_input = sys.argv[1]
+    input_directory = sys.argv[2]
+    output_directory = sys.argv[3]
 
     # Find files.
     input_files = []
@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     # Load model.
     print('Loading 12ECG model...')
-    model = load_12ECG_model()
+    model = load_12ECG_model(model_input)
 
     # Iterate over files.
     print('Extracting 12ECG features...')
