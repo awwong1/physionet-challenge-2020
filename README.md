@@ -35,6 +35,10 @@ All of the raw training data is available from [this discussion post](https://gr
     cd data
     ./quickstart.sh
     ```
+- Run the unittests.
+    ```bash
+    python3 -m unittest discover -v -s ./tests -p test_*.py
+    ```
 
 # Example Classifier
 
