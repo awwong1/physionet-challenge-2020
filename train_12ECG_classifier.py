@@ -8,11 +8,10 @@ import joblib
 import numpy as np
 import wfdb
 from scipy.io import loadmat
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
 
 from feature_extractor import get_structured_lead_features
-from get_12ECG_features import get_12ECG_features
 
 
 def hea_fp_to_np_array(hea_fp):
@@ -67,17 +66,48 @@ def hea_fp_to_np_array(hea_fp):
     for lead_idx in range(num_leads):
         lead_sig = r.p_signal[:, lead_idx]
         lead_data, lead_dtype = get_structured_lead_features(
-            lead_sig,
-            sampling_rate=r.fs,
-            lead_name=r.sig_name[lead_idx]
+            lead_sig, sampling_rate=r.fs, lead_name=r.sig_name[lead_idx]
         )
         data += lead_data
         dtype += lead_dtype
 
-    return np.array([tuple(data), ], dtype=np.dtype(dtype))
+    return np.array([tuple(data),], dtype=np.dtype(dtype))
 
-
-def train_12ECG_classifier(input_directory, output_directory, data_cache_fp=".data_cache.sav"):
+def train_12ECG_classifier(
+    input_directory,
+    output_directory,
+    data_cache_fp=".data_cache.sav",
+    test_size=0.2,
+    scored_codes=[
+        270492004,
+        164889003,
+        164890007,
+        426627000,
+        713427006,
+        713426002,
+        445118002,
+        39732003,
+        164909002,
+        251146004,
+        698252002,
+        10370003,
+        284470004,
+        427172004,
+        164947007,
+        111975006,
+        164917005,
+        47665007,
+        59118001,
+        427393009,
+        426177001,
+        426783006,
+        427084000,
+        63593006,
+        164934002,
+        59931005,
+        17338001,
+    ],
+):
     print("Loading data...")
     header_files = tuple(
         glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
@@ -97,54 +127,48 @@ def train_12ECG_classifier(input_directory, output_directory, data_cache_fp=".da
         print(f"Saving cache of dataset to '{data_cache_fp}'")
         joblib.dump(data_cache, data_cache_fp)
 
-    classes = sorted(set([dxi for dxs in data_cache["dx"] for dxi in dxs]))
-    num_classes = len(classes)
-    num_files = len(data_cache)
+    # classes = sorted(set([dxi for dxs in data_cache["dx"] for dxi in dxs]))
+    # num_classes = len(classes)
 
-    print("Skipping training model.")
-    return
+    to_features = [n for n in data_cache.dtype.names if n not in ("dx", "record_name", "seq_len")]
+
+    # Split the data into train and test sets
+    data_train, data_test = train_test_split(data_cache, test_size=test_size)
+
+    # trainers throw an error when structured arrays passed, convert to unstructured
+    raw_data_train = data_train[to_features].copy()
+    raw_data_train = raw_data_train.tolist()
+    raw_data_train = np.array(raw_data_train)
+
+    raw_data_test = data_test[to_features].copy()
+    raw_data_test = raw_data_test.tolist()
+    raw_data_test = np.array(raw_data_test)
+
+    to_save_data = {
+        "train_records": data_train["record_name"].tolist(),
+        "eval_records": data_test["record_name"].tolist(),
+    }
 
     # Train model.
-    print("Training model...")
+    print("Training models...")
+    for sc in scored_codes:
+        print(f"Training classifier for code {sc}...")
+        train_labels = []
+        for dt in data_train:
+            train_labels.append(sc in dt["dx"])
+        test_labels = []
+        for dt in data_test:
+            test_labels.append(sc in dt["dx"])
 
-    features = list()
-    labels = list()
+        model = XGBClassifier().fit(raw_data_train, train_labels, eval_set=[(raw_data_test, test_labels)])
 
-    for i in range(num_files):
-        recording = recordings[i]
-        header = headers[i]
-
-        tmp = get_12ECG_features(recording, header)
-        features.append(tmp)
-
-        for l in header:
-            if l.startswith("#Dx:"):
-                labels_act = np.zeros(num_classes)
-                arrs = l.strip().split(" ")
-                for arr in arrs[1].split(","):
-                    class_index = classes.index(
-                        arr.rstrip()
-                    )  # Only use first positive index
-                    labels_act[class_index] = 1
-        labels.append(labels_act)
-
-    features = np.array(features)
-    labels = np.array(labels)
-
-    # Replace NaN values with mean values
-    imputer = SimpleImputer().fit(features)
-    features = imputer.transform(features)
-
-    # Train the classifier
-    model = RandomForestClassifier().fit(features, labels)
+        to_save_data[sc] = model
 
     # Save model.
     print("Saving model...")
 
-    final_model = {"model": model, "imputer": imputer}
-
     filename = os.path.join(output_directory, "finalized_model.sav")
-    joblib.dump(final_model, filename, protocol=0)
+    joblib.dump(to_save_data, filename, protocol=0)
 
 
 # Load challenge data.
