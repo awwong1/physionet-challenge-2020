@@ -28,6 +28,8 @@ All of the raw training data is available from [this discussion post](https://gr
     ```bash
     python3 -m venv env
     source env/bin/activate
+    pip install --upgrade pip
+    pip install wheel
     pip install -r requirements.txt
     ```
 - Download and extract the training data.

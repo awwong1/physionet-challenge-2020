@@ -132,3 +132,4 @@ dmypy.json
 data/PhysioNetChallenge2020_Training*.tar.gz
 data/**/*.hea
 data/**/*.mat
+.data_cache.sav
