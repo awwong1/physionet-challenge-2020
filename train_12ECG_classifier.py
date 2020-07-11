@@ -2,78 +2,16 @@
 
 import os
 import json
-import re
 import time
 from glob import glob
 
 import joblib
 import numpy as np
-import wfdb
 from scipy.io import loadmat
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
-from feature_extractor import get_structured_lead_features
-
-
-def hea_fp_to_np_array(hea_fp):
-    """Read a .hea file, convert it into a structured numpy array containing all ECG comment metadata and signal features
-    """
-    record_name = hea_fp.split(".hea")[0]
-    r = wfdb.rdrecord(record_name)
-    signal = r.p_signal
-    seq_len, num_leads = signal.shape
-
-    # Comment derived features
-    dx = []  # target label
-    age = float("nan")
-    sex = float("nan")
-
-    for comment in r.comments:
-        dx_grp = re.search(r"Dx: (?P<dx>.*)$", comment)
-        if dx_grp:
-            raw_dx = dx_grp.group("dx").split(",")
-            for dxi in raw_dx:
-                snomed_code = int(dxi)
-                dx.append(snomed_code)
-            continue
-
-        age_grp = re.search(r"Age: (?P<age>.*)$", comment)
-        if age_grp:
-            age = float(age_grp.group("age"))
-            if not np.isfinite(age):
-                age = float("nan")
-            continue
-
-        sx_grp = re.search(r"Sex: (?P<sx>.*)$", comment)
-        if sx_grp:
-            if sx_grp.group("sx").upper().startswith("F"):
-                sex = 1.0
-            elif sx_grp.group("sx").upper().startswith("M"):
-                sex = 0.0
-            continue
-
-    # Base structure of numpy array
-    data = [record_name, seq_len, r.fs, age, sex, tuple(dx)]
-    dtype = [
-        ("record_name", np.unicode_, 50),
-        ("seq_len", "f4"),
-        ("sampling_rate", "f4"),
-        ("age", "f4"),
-        ("sex", "f4"),
-        ("dx", np.object),
-    ]
-
-    # Signal derived features
-    for lead_idx in range(num_leads):
-        lead_sig = r.p_signal[:, lead_idx]
-        lead_data, lead_dtype = get_structured_lead_features(
-            lead_sig, sampling_rate=r.fs, lead_name=r.sig_name[lead_idx]
-        )
-        data += lead_data
-        dtype += lead_dtype
-
-    return np.array([tuple(data),], dtype=np.dtype(dtype))
+from feature_extractor import hea_fp_to_np_array, structured_np_array_to_features
 
 
 def train_12ECG_classifier(
@@ -131,24 +69,12 @@ def train_12ECG_classifier(
         print(f"Saving cache of dataset to '{data_cache_fp}'")
         joblib.dump(data_cache, data_cache_fp)
 
-    # classes = sorted(set([dxi for dxs in data_cache["dx"] for dxi in dxs]))
-    # num_classes = len(classes)
-
-    to_features = [
-        n for n in data_cache.dtype.names if n not in ("dx", "record_name", "seq_len")
-    ]
-
     # Split the data into train and evaluation sets
     data_train, data_eval = train_test_split(data_cache, test_size=test_size)
 
     # trainers throw an error when structured arrays passed, convert to unstructured
-    raw_data_train = data_train[to_features].copy()
-    raw_data_train = raw_data_train.tolist()
-    raw_data_train = np.array(raw_data_train)
-
-    raw_data_eval = data_eval[to_features].copy()
-    raw_data_eval = raw_data_eval.tolist()
-    raw_data_eval = np.array(raw_data_eval)
+    raw_data_train = structured_np_array_to_features(data_train)
+    raw_data_eval = structured_np_array_to_features(data_eval)
 
     # also store the split for analysis
     to_save_data = {
@@ -160,7 +86,6 @@ def train_12ECG_classifier(
     with open("data/snomed_ct_dx_map.json", "r") as f:
         SNOMED_CODE_MAP = json.load(f)
 
-    # Train model.
     print("Training models...")
     for sc in scored_codes:
 
@@ -230,11 +155,9 @@ def train_12ECG_classifier(
 
         to_save_data[sc] = model
 
-    # Save model.
     print("Saving model...")
 
     cur_sec = int(time.time())
-
     filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
     joblib.dump(to_save_data, filename, protocol=0)
 

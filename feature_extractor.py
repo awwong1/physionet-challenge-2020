@@ -1,16 +1,145 @@
+import re
+
+import joblib
 import neurokit2 as nk
+import numpy as np
+import wfdb
+
+from util import convert_to_wfdb_record
+
+
+def hea_fp_to_np_array(hea_fp):
+    """Read a .hea file, convert it into a structured numpy array containing all
+    ECG comment metadata and signal features
+    """
+    record_name = hea_fp.split(".hea")[0]
+    r = wfdb.rdrecord(record_name)
+    return wfdb_record_to_np_array(r, record_name=record_name)
+
+
+def data_header_to_np_array(data, header_data):
+    """Given the raw signal matrix and header, convert it into a numpy array containing
+    all ECG signal features"""
+    r = convert_to_wfdb_record(data, header_data)
+    return wfdb_record_to_np_array(r, record_name=r.record_name)
+
+
+def wfdb_record_to_np_array(r, record_name=None):
+    if record_name is None:
+        record_name = r.record_name
+    signal = r.p_signal
+    seq_len, num_leads = signal.shape
+
+    # Comment derived features
+    dx = []  # target label
+    age = float("nan")
+    sex = float("nan")
+
+    for comment in r.comments:
+        dx_grp = re.search(r"Dx: (?P<dx>.*)$", comment)
+        if dx_grp:
+            raw_dx = dx_grp.group("dx").split(",")
+            for dxi in raw_dx:
+                snomed_code = int(dxi)
+                dx.append(snomed_code)
+            continue
+
+        age_grp = re.search(r"Age: (?P<age>.*)$", comment)
+        if age_grp:
+            age = float(age_grp.group("age"))
+            if not np.isfinite(age):
+                age = float("nan")
+            continue
+
+        sx_grp = re.search(r"Sex: (?P<sx>.*)$", comment)
+        if sx_grp:
+            if sx_grp.group("sx").upper().startswith("F"):
+                sex = 1.0
+            elif sx_grp.group("sx").upper().startswith("M"):
+                sex = 0.0
+            continue
+
+    # Base structure of numpy array
+    data = [record_name, seq_len, r.fs, age, sex, tuple(dx)]
+    dtype = [
+        ("record_name", np.unicode_, 50),
+        ("seq_len", "f4"),
+        ("sampling_rate", "f4"),
+        ("age", "f4"),
+        ("sex", "f4"),
+        ("dx", np.object),
+    ]
+
+    # Signal derived features (non-parallel)
+    # for lead_idx in range(num_leads):
+    #     lead_sig = r.p_signal[:, lead_idx]
+    #     lead_data, lead_dtype = get_structured_lead_features(
+    #         lead_sig, sampling_rate=r.fs, lead_name=r.sig_name[lead_idx]
+    #     )
+    #     data += lead_data
+    #     dtype += lead_dtype
+
+    # Parallel signal derived features
+    output = joblib.Parallel(verbose=0, n_jobs=12)(
+        joblib.delayed(get_structured_lead_features)(
+            r.p_signal[:, lead_idx], sampling_rate=r.fs, lead_name=r.sig_name[lead_idx])
+        for lead_idx in range(num_leads)
+    )
+
+    for (lead_data, lead_dtype) in output:
+        data += lead_data
+        dtype += lead_dtype
+
+    return np.array([tuple(data),], dtype=np.dtype(dtype))
+
+
+def structured_np_array_to_features(np_array):
+    """Convert the structured numpy array into an unstructured numpy array of features.
+    """
+    to_features = [
+        n for n in np_array.dtype.names if n not in ("dx", "record_name", "seq_len")
+    ]
+    raw_np_array = np.array(np_array[to_features].tolist())
+
+    return raw_np_array
 
 
 def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
     """From an ECG single lead, return feature values and corresponding dtype
     """
 
-    ir_cols = ['ECG_Rate_Mean', 'HRV_RMSSD', 'HRV_MeanNN', 'HRV_SDNN', 'HRV_SDSD',
-               'HRV_CVNN', 'HRV_CVSD', 'HRV_MedianNN', 'HRV_MadNN', 'HRV_MCVNN',
-               'HRV_pNN50', 'HRV_pNN20', 'HRV_TINN', 'HRV_HTI', 'HRV_ULF', 'HRV_VLF',
-               'HRV_LF', 'HRV_HF', 'HRV_VHF', 'HRV_LFHF', 'HRV_LFn', 'HRV_HFn',
-               'HRV_LnHF', 'HRV_SD1', 'HRV_SD2', 'HRV_SD2SD1', 'HRV_CSI', 'HRV_CVI',
-               'HRV_CSI_Modified', 'HRV_SampEn']
+    ir_cols = [
+        "ECG_Rate_Mean",
+        "HRV_RMSSD",
+        "HRV_MeanNN",
+        "HRV_SDNN",
+        "HRV_SDSD",
+        "HRV_CVNN",
+        "HRV_CVSD",
+        "HRV_MedianNN",
+        "HRV_MadNN",
+        "HRV_MCVNN",
+        "HRV_pNN50",
+        "HRV_pNN20",
+        "HRV_TINN",
+        "HRV_HTI",
+        "HRV_ULF",
+        "HRV_VLF",
+        "HRV_LF",
+        "HRV_HF",
+        "HRV_VHF",
+        "HRV_LFHF",
+        "HRV_LFn",
+        "HRV_HFn",
+        "HRV_LnHF",
+        "HRV_SD1",
+        "HRV_SD2",
+        "HRV_SD2SD1",
+        "HRV_CSI",
+        "HRV_CVI",
+        "HRV_CSI_Modified",
+        "HRV_SampEn",
+    ]
 
     data = []
     dtype = []
@@ -150,7 +279,9 @@ def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
         """
 
         ir_df = nk.ecg_intervalrelated(signals, sampling_rate=sampling_rate)
-        assert all(ir_df.columns == ir_cols), f"interval related feature column mismatch: {lead_name}"
+        assert all(
+            ir_df.columns == ir_cols
+        ), f"interval related feature column mismatch: {lead_name}"
 
         ir_data = ir_df.to_numpy()
         ir_elem_dtype = ir_data.dtype
