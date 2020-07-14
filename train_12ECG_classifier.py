@@ -178,14 +178,24 @@ def train_12ECG_classifier(
         g_beta_measure,
         challenge_metric,
     ) = train_evaluate_score_batch_helper(
-        data_eval,
-        raw_data_eval,
-        data_cache,
-        to_save_data
+        data_eval, raw_data_eval, data_cache, to_save_data
     )
 
-    print("AUROC | AUPRC | Accuracy | F-measure | Fbeta-measure | Gbeta-measure | Challenge metric")
-    print(f"{auroc:.3f} | {auprc:.3f} | {accuracy:.3f} | {f_measure:.3f} | {f_beta_measure:.3f} | {g_beta_measure:.3f} | {challenge_metric:.3f}")
+    print(
+        "AUROC | AUPRC | Accuracy | F-measure | Fbeta-measure | Gbeta-measure | Challenge metric"
+    )
+    print(
+        f"{auroc:>5.3f} | {auprc:>5.3f} | {accuracy:>8.3f} | {f_measure:>9.3f} |"
+        f" {f_beta_measure:>13.3f} | {g_beta_measure:>13.3f} | {challenge_metric:>16.3f}"
+    )
+
+    to_save_data["auroc"] = auroc
+    to_save_data["auprc"] = auprc
+    to_save_data["accuracy"] = accuracy
+    to_save_data["f_measure"] = f_measure
+    to_save_data["f_beta_measure"] = f_beta_measure
+    to_save_data["g_beta_measure"] = g_beta_measure
+    to_save_data["challenge_metric"] = challenge_metric
 
     print("Saving model...")
 
