@@ -99,9 +99,7 @@ def structured_np_array_to_features(np_array):
     to_features = [
         n for n in np_array.dtype.names if n not in ("dx", "record_name", "seq_len")
     ]
-    raw_np_array = np.array(np_array[to_features].tolist())
-
-    return raw_np_array
+    return np.array(np_array[to_features].tolist())
 
 
 def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):

@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
 from feature_extractor import hea_fp_to_np_array, structured_np_array_to_features
+from util.evaluation_helper import train_evaluate_score_batch_helper
 
 
 def train_12ECG_classifier(
@@ -103,10 +104,10 @@ def train_12ECG_classifier(
             # C: 427172004 and 17338001
             dsc = 17338001
 
-        if dsc is not None:
-            _, ddx = SNOMED_CODE_MAP[str(dsc)]
-            print(f"Skipping {dx} (code {sc}), covered by {ddx} (code {dsc})")
-            continue
+        # if dsc is not None:
+        #     _, ddx = SNOMED_CODE_MAP[str(dsc)]
+        #     print(f"Skipping {dx} (code {sc}), covered by {ddx} (code {dsc})")
+        #     continue
 
         print(f"Training classifier for {dx} (code {sc})...")
 
@@ -121,14 +122,25 @@ def train_12ECG_classifier(
         if isc is not None:
             _, idx = SNOMED_CODE_MAP[str(isc)]
             print(f"Including {idx} (code {isc})")
+        if dsc is not None:
+            _, idx = SNOMED_CODE_MAP[str(dsc)]
+            print(f"Including {idx} (code {dsc})")
 
         train_labels = []
         for dt in data_train:
-            pos = (sc in dt["dx"]) or (isc is not None and isc in dt["dx"])
+            pos = (
+                (sc in dt["dx"])
+                or (isc is not None and isc in dt["dx"])
+                or (dsc is not None and dsc in dt["dx"])
+            )
             train_labels.append(pos)
         eval_labels = []
         for dt in data_eval:
-            pos = (sc in dt["dx"]) or (isc is not None and isc in dt["dx"])
+            pos = (
+                (sc in dt["dx"])
+                or (isc is not None and isc in dt["dx"])
+                or (dsc is not None and dsc in dt["dx"])
+            )
             eval_labels.append(pos)
 
         # default
@@ -140,7 +152,7 @@ def train_12ECG_classifier(
 
         model = XGBClassifier(
             booster="gbtree",  # gbtree, dart or gblinear
-            verbosity=2,
+            verbosity=0,
             tree_method="gpu_hist",
             sampling_method="gradient_based",
             scale_pos_weight=scale_pos_weight,
@@ -150,10 +162,30 @@ def train_12ECG_classifier(
             train_labels,
             eval_set=[(raw_data_train, train_labels), (raw_data_eval, eval_labels)],
             early_stopping_rounds=early_stopping_rounds,
-            verbose=True,
+            verbose=False,
         )
 
         to_save_data[sc] = model
+
+    # Calculate the challenge related metrics on the evaluation data set
+    print("Calculating challenge related metrics")
+    (
+        auroc,
+        auprc,
+        accuracy,
+        f_measure,
+        f_beta_measure,
+        g_beta_measure,
+        challenge_metric,
+    ) = train_evaluate_score_batch_helper(
+        data_eval,
+        raw_data_eval,
+        data_cache,
+        to_save_data
+    )
+
+    print("AUROC | AUPRC | Accuracy | F-measure | Fbeta-measure | Gbeta-measure | Challenge metric")
+    print(f"{auroc:.3f} | {auprc:.3f} | {accuracy:.3f} | {f_measure:.3f} | {f_beta_measure:.3f} | {g_beta_measure:.3f} | {challenge_metric:.3f}")
 
     print("Saving model...")
 

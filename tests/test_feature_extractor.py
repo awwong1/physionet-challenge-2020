@@ -8,7 +8,7 @@ from train_12ECG_classifier import hea_fp_to_np_array
 
 class TestFeatureExtractor(unittest.TestCase):
     def test_get_structured_lead_features(self):
-        r = wfdb.rdrecord("tests/data/A5432")
+        r = wfdb.rdrecord("tests/data/Q0001")
 
         sig_len, num_leads = r.p_signal.shape
 
@@ -59,7 +59,7 @@ class TestFeatureExtractor(unittest.TestCase):
             )
 
     def test_hea_fp_to_np_array(self):
-        str_arr = hea_fp_to_np_array("tests/data/A5432.hea")
+        str_arr = hea_fp_to_np_array("tests/data/Q0001.hea")
 
         ref_dtype = [
             ("record_name", "<U50"),

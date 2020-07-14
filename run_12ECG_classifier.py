@@ -4,6 +4,7 @@ import os
 import joblib
 
 from feature_extractor import data_header_to_np_array, structured_np_array_to_features
+from util.evaluate_12ECG_score import is_number
 
 
 def run_12ECG_classifier(data, header_data, loaded_model):
@@ -15,7 +16,7 @@ def run_12ECG_classifier(data, header_data, loaded_model):
     labels = []
     scores = []
     for k, v in loaded_model.items():
-        if k in ("train_records", "eval_records"):
+        if not is_number(k):
             continue
         classes.append(str(k))
         labels.append(int(v.predict(features)[0]))

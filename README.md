@@ -24,6 +24,7 @@ All of the raw training data is available from [this discussion post](https://gr
     ```bash
     git submodule update --init --recursive
     ```
+    - This is required to resolve the symbolic links for `util/evaluate_12ECG_score.py` and `weights.csv`
 - Create a python3 virtual environment and install the required dependencies.
     ```bash
     python3 -m venv env
