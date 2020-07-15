@@ -5,6 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: train_model.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_model.py",
+            "args": [
+                "data",
+                "model"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: driver.py",
             "type": "python",
             "request": "launch",

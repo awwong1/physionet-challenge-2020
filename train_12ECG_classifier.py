@@ -13,6 +13,7 @@ from xgboost import XGBClassifier
 
 from feature_extractor import hea_fp_to_np_array, structured_np_array_to_features
 from util.evaluation_helper import train_evaluate_score_batch_helper
+from util.evaluate_12ECG_score import load_table
 
 
 def train_12ECG_classifier(
@@ -21,35 +22,7 @@ def train_12ECG_classifier(
     data_cache_fp=".data_cache.sav",
     early_stopping_rounds=20,
     test_size=0.2,
-    scored_codes=[
-        270492004,
-        164889003,
-        164890007,
-        426627000,
-        713427006,  # A: 713427006 and 59118001
-        713426002,
-        445118002,
-        39732003,
-        164909002,
-        251146004,
-        698252002,
-        10370003,
-        284470004,  # B: 284470004 and 63593006
-        427172004,  # C: 427172004 and 17338001
-        164947007,
-        111975006,
-        164917005,
-        47665007,
-        59118001,  # A: 713427006 and 59118001
-        427393009,
-        426177001,
-        426783006,
-        427084000,
-        63593006,  # B: 284470004 and 63593006
-        164934002,
-        59931005,
-        17338001,  # C: 427172004 and 17338001
-    ],
+    weights_file="weights.csv",
 ):
     print("Loading data...")
     header_files = tuple(
@@ -87,61 +60,28 @@ def train_12ECG_classifier(
     with open("data/snomed_ct_dx_map.json", "r") as f:
         SNOMED_CODE_MAP = json.load(f)
 
+    print("Loading weights...")
+
+    rows, cols, all_weights = load_table(weights_file)
+    assert rows == cols, "rows and cols mismatch"
+
+    scored_codes = rows
+
     print("Training models...")
-    for sc in scored_codes:
 
+    for idx_sc, sc in enumerate(scored_codes):
         _abbrv, dx = SNOMED_CODE_MAP[str(sc)]
-
-        # hardcoded duplicate classifiers based on label scoring weights
-        dsc = None
-        if sc == 713427006:
-            # A: 713427006 and 59118001
-            dsc = 59118001
-        elif sc == 284470004:
-            # B: 284470004 and 63593006
-            dsc = 63593006
-        elif sc == 427172004:
-            # C: 427172004 and 17338001
-            dsc = 17338001
-
-        # if dsc is not None:
-        #     _, ddx = SNOMED_CODE_MAP[str(dsc)]
-        #     print(f"Skipping {dx} (code {sc}), covered by {ddx} (code {dsc})")
-        #     continue
-
         print(f"Training classifier for {dx} (code {sc})...")
 
-        isc = None
-        if sc == 59118001:
-            isc = 713427006
-        elif sc == 63593006:
-            isc = 284470004
-        elif sc == 17338001:
-            isc = 427172004
+        label_weights = all_weights[idx_sc]
 
-        if isc is not None:
-            _, idx = SNOMED_CODE_MAP[str(isc)]
-            print(f"Including {idx} (code {isc})")
-        if dsc is not None:
-            _, idx = SNOMED_CODE_MAP[str(dsc)]
-            print(f"Including {idx} (code {dsc})")
+        train_labels, train_weights = _determine_sample_weights(
+            data_train, scored_codes, label_weights
+        )
 
-        train_labels = []
-        for dt in data_train:
-            pos = (
-                (sc in dt["dx"])
-                or (isc is not None and isc in dt["dx"])
-                or (dsc is not None and dsc in dt["dx"])
-            )
-            train_labels.append(pos)
-        eval_labels = []
-        for dt in data_eval:
-            pos = (
-                (sc in dt["dx"])
-                or (isc is not None and isc in dt["dx"])
-                or (dsc is not None and dsc in dt["dx"])
-            )
-            eval_labels.append(pos)
+        eval_labels, eval_weights = _determine_sample_weights(
+            data_eval, scored_codes, label_weights
+        )
 
         # default
         # scale_pos_weight = 1
@@ -160,7 +100,9 @@ def train_12ECG_classifier(
         model = model.fit(
             raw_data_train,
             train_labels,
+            sample_weight=train_weights,
             eval_set=[(raw_data_train, train_labels), (raw_data_eval, eval_labels)],
+            sample_weight_eval_set=[train_weights, eval_weights],
             early_stopping_rounds=early_stopping_rounds,
             verbose=False,
         )
@@ -204,6 +146,31 @@ def train_12ECG_classifier(
     joblib.dump(to_save_data, filename, protocol=0)
 
     print(f"Saved to {filename}")
+
+
+def _determine_sample_weights(data_set, scored_codes, label_weights, weight_threshold=0.5):
+    """Using the scoring labels weights to increase the dataset size of positive labels
+    """
+    data_labels = []
+    sample_weights = []
+    for dt in data_set:
+        sample_weight = None
+        for dx in dt["dx"]:
+            if str(dx) in scored_codes:
+                _sample_weight = label_weights[scored_codes.index(str(dx))]
+                if _sample_weight < weight_threshold:
+                    continue
+                if sample_weight is None or _sample_weight > sample_weight:
+                    sample_weight = _sample_weight
+
+        if sample_weight is None:
+            # not a scored label, treat as a negative example (weight of 1)
+            sample_weight = 1
+            data_labels.append(False)
+        else:
+            data_labels.append(True)
+        sample_weights.append(sample_weight)
+    return data_labels, sample_weights
 
 
 # Load challenge data.
