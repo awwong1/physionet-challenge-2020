@@ -133,3 +133,6 @@ data/PhysioNetChallenge2020_Training*.tar.gz
 data/**/*.hea
 data/**/*.mat
 .data_cache.sav
+
+# Don't upload the models
+model*/**/*.sav
