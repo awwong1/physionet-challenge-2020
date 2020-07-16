@@ -1,4 +1,6 @@
 import re
+import sys
+import traceback
 
 import joblib
 import neurokit2 as nk
@@ -1157,6 +1159,10 @@ def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
         data += list(hb_data.tolist()[0])
         dtype += hb_dtype
     except Exception:
+        # exc_type, exc_value, exc_traceback = sys.exc_info()
+        # print("*** print_tb:")
+        # traceback.print_tb(exc_traceback, limit=1, file=sys.stdout)
+
         # TODO: fill in the rest of the data with NaNs
         for k in IR_COLS + TSFRESH_COLS:
             key = f"{lead_name}_{k}"

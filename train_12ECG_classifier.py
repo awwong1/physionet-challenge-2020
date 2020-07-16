@@ -148,7 +148,7 @@ def train_12ECG_classifier(
     print(f"Saved to {filename}")
 
 
-def _determine_sample_weights(data_set, scored_codes, label_weights, weight_threshold=0.9):
+def _determine_sample_weights(data_set, scored_codes, label_weights, weight_threshold=0.5):
     """Using the scoring labels weights to increase the dataset size of positive labels
     """
     data_labels = []

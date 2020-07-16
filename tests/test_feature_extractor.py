@@ -1,5 +1,6 @@
 import unittest
 
+import numpy as np
 import wfdb
 
 from feature_extractor import get_structured_lead_features, IR_COLS, TSFRESH_COLS
@@ -29,6 +30,36 @@ class TestFeatureExtractor(unittest.TestCase):
             self.assertCountEqual(
                 [d[0] for d in dtype], [f"{lead_name}_{d_col}" for d_col in self.data_cols]
             )
+
+    def test_get_structured_lead_features_on_bad_data(self):
+        lead_sig = np.zeros(5000)
+        lead_name = "ZRO"
+        data, dtype = get_structured_lead_features(
+            lead_sig, sampling_rate=500, lead_name=lead_name,
+        )
+
+        self.assertEqual(len(data), len(self.data_cols))
+
+        self.assertCountEqual(
+            [d[0] for d in dtype], [f"{lead_name}_{d_col}" for d_col in self.data_cols]
+        )
+
+        self.assertTrue(all(np.isnan(data)))
+
+        lead_sig = np.random.rand(5000)
+        lead_name = "RND"
+        data, dtype = get_structured_lead_features(
+            lead_sig, sampling_rate=500, lead_name=lead_name,
+        )
+
+        self.assertEqual(len(data), len(self.data_cols))
+
+        self.assertCountEqual(
+            [d[0] for d in dtype], [f"{lead_name}_{d_col}" for d_col in self.data_cols]
+        )
+
+        self.assertTrue(any(np.isnan(data)))
+        # self.assertTrue(any(np.isfinite(data)))
 
     def test_hea_fp_to_np_array(self):
         str_arr = hea_fp_to_np_array("tests/data/Q0001.hea")
