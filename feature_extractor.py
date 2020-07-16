@@ -1137,7 +1137,7 @@ def _extract_tsfresh_from_heartbeats(signals, rpeaks, sampling_rate, lead_name):
         column_value="hb_sig",
         show_warnings=False,
         disable_progressbar=True,
-        n_jobs=-1,
+        n_jobs=0,
     )
 
     assert all(

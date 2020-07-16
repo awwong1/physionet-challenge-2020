@@ -36,7 +36,11 @@ def train_12ECG_classifier(
         data_cache = joblib.load(data_cache_fp)
     else:
         data_cache = np.concatenate(
-            joblib.Parallel(verbose=1, n_jobs=-1)(
+            joblib.Parallel(
+                verbose=1,
+                n_jobs=-1,
+                backend="multiprocessing",  # "loky", "threading"
+            )(
                 joblib.delayed(hea_fp_to_np_array)(hea_fp) for hea_fp in header_files
             )
         )
