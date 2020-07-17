@@ -35,16 +35,37 @@ def train_12ECG_classifier(
         print(f"Loading cached dataset from '{data_cache_fp}'")
         data_cache = joblib.load(data_cache_fp)
     else:
-        data_cache = np.concatenate(
-            joblib.Parallel(
-                verbose=1,
-                n_jobs=-1,
-                backend="multiprocessing",  # "loky", "threading"
-            )(
-                joblib.delayed(hea_fp_to_np_array)(hea_fp) for hea_fp in header_files
+        # CHUNK THE HEADER FILES
+        chunk_size = 1000
+        chunk_idx = 0
+        chunk = 0
+        while chunk_idx < len(header_files):
+            data_cache = np.concatenate(
+                joblib.Parallel(
+                    verbose=1,
+                    n_jobs=-1,
+                    backend="multiprocessing",  # "loky", "threading"
+                )(
+                    joblib.delayed(hea_fp_to_np_array)(hea_fp)
+                    for hea_fp in header_files[chunk_idx:chunk_idx + chunk_size]
+                )
             )
-        )
+            chunk_data_cache_fp = f"{data_cache_fp}.{chunk}"
+            print(f"Saving cache of dataset chunk to '{chunk_data_cache_fp}'")
+            joblib.dump(data_cache, chunk_data_cache_fp)
+
+            chunk_idx += chunk_size
+            chunk += 1
+
+        # join all of the chunks into a single numpy file
+        chunk_file_paths = glob(f"{data_cache_fp}.*")
+        chunk_files = []
+        for chunk_fp in chunk_file_paths:
+            chunk_file = joblib.load(chunk_fp, mmap_mode="r")
+            chunk_files.append(chunk_file)
+
         print(f"Saving cache of dataset to '{data_cache_fp}'")
+        data_cache = np.concatenate(chunk_files)
         joblib.dump(data_cache, data_cache_fp)
 
     # Split the data into train and evaluation sets
