@@ -36,7 +36,7 @@ def train_12ECG_classifier(
         data_cache = joblib.load(data_cache_fp)
     else:
         # CHUNK THE HEADER FILES
-        chunk_size = 1000
+        chunk_size = 200
         chunk_idx = 0
         chunk = 0
         while chunk_idx < len(header_files):
