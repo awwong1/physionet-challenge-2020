@@ -3,15 +3,19 @@ import unittest
 import numpy as np
 import wfdb
 
-from feature_extractor import get_structured_lead_features, IR_COLS, TSFRESH_COLS
+from feature_extractor import (
+    get_structured_lead_features,
+    IR_COLS,
+    HB_SIG_TSFRESH_COLS,
+    LEAD_SIG_TSFRESH_COLS,
+)
 from train_12ECG_classifier import hea_fp_to_np_array
 
 
 class TestFeatureExtractor(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
-        cls.data_cols = IR_COLS + TSFRESH_COLS
+        cls.data_cols = IR_COLS + HB_SIG_TSFRESH_COLS + LEAD_SIG_TSFRESH_COLS
 
     def test_get_structured_lead_features(self):
         r = wfdb.rdrecord("tests/data/Q0001")
@@ -28,7 +32,8 @@ class TestFeatureExtractor(unittest.TestCase):
             self.assertEqual(len(data), len(self.data_cols))
 
             self.assertCountEqual(
-                [d[0] for d in dtype], [f"{lead_name}_{d_col}" for d_col in self.data_cols]
+                [d[0] for d in dtype],
+                [f"{lead_name}_{d_col}" for d_col in self.data_cols],
             )
 
     def test_get_structured_lead_features_on_bad_data(self):
@@ -70,12 +75,25 @@ class TestFeatureExtractor(unittest.TestCase):
             ("sampling_rate", "<f8"),
             ("age", "<f8"),
             ("sex", "<f8"),
-            ("dx", "O"),
+            ("dx", "|O"),
         ]
-        lead_names = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
+        lead_names = (
+            "I",
+            "II",
+            "III",
+            "aVR",
+            "aVL",
+            "aVF",
+            "V1",
+            "V2",
+            "V3",
+            "V4",
+            "V5",
+            "V6",
+        )
 
         for lead_name in lead_names:
             ref_dtype += [(f"{lead_name}_{d_col}", "<f8") for d_col in self.data_cols]
 
         self.assertEqual(str_arr.shape, (1,))
-        self.assertEqual(str_arr.dtype, ref_dtype)
+        self.assertEqual(str_arr.dtype.descr, ref_dtype)

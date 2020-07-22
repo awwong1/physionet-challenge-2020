@@ -36,7 +36,7 @@ def train_12ECG_classifier(
         data_cache = joblib.load(data_cache_fp)
     else:
         # CHUNK THE HEADER FILES
-        chunk_size = 200
+        chunk_size = 100
         chunk_idx = 0
         chunk = 0
         while chunk_idx < len(header_files):
@@ -122,6 +122,7 @@ def train_12ECG_classifier(
             sampling_method="gradient_based",
             scale_pos_weight=scale_pos_weight,
         )
+
         model = model.fit(
             raw_data_train,
             train_labels,
