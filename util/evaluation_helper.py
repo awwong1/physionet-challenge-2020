@@ -22,14 +22,8 @@ def train_evaluate_score_batch_helper(data_eval, features, data_cache, loaded_mo
             continue
         classes.append(str(k))
 
-        if len(v) == 2:
-            feat_model, class_model = v
-            new_features = feat_model.transform(features)
-            labels.append(class_model.predict(new_features).tolist())
-            scores.append(class_model.predict_proba(new_features)[:, 1].tolist())
-        else:
-            labels.append(v.predict(features).tolist())
-            scores.append(v.predict_proba(features)[:, 1].tolist())
+        labels.append(v.predict(features).tolist())
+        scores.append(v.predict_proba(features)[:, 1].tolist())
 
     labels = np.array(labels).T
     scores = np.array(scores).T

@@ -49,7 +49,7 @@ class TestFeatureExtractor(unittest.TestCase):
             [d[0] for d in dtype], [f"{lead_name}_{d_col}" for d_col in self.data_cols]
         )
 
-        self.assertTrue(all(np.isnan(data)))
+        self.assertTrue(any(np.isnan(data)))
 
         lead_sig = np.random.rand(5000)
         lead_name = "RND"

@@ -33,7 +33,7 @@ def train_12ECG_classifier(
 
     if os.path.isfile(data_cache_fp):
         print(f"Loading cached dataset from '{data_cache_fp}'")
-        data_cache = joblib.load(data_cache_fp)
+        data_cache = joblib.load(data_cache_fp, mmap_mode="r")
     else:
         # CHUNK THE HEADER FILES
         chunk_size = 100

@@ -1798,20 +1798,13 @@ def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
     data = []
     dtype = []
 
-    # RESAMPLE TO 100Hz
-    mod_fs = 100
-    len_mod_fs = int(len(lead_signal) / sampling_rate * mod_fs)
-    lead_signal_mod_fs = sp.signal.resample(lead_signal, len_mod_fs)
-
-    # HARD LIMIT TO 30 SECONDS
-    lead_signal_mod_fs = lead_signal_mod_fs[:3000]
-
     signals = None
     rpeaks = None
 
+    # HEART RATE VARIABILITY FEATURES
     try:
         ir_data, ir_dtype, signals, rpeaks = _extract_neurokit2_interval_from_signal(
-            lead_signal_mod_fs, mod_fs, lead_name
+            lead_signal, sampling_rate, lead_name
         )
 
         # cast into numpy array, parse back out values and dtypes
@@ -1828,9 +1821,10 @@ def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
                 data.append(float("nan"))
                 dtype.append((key, "f8"))
 
+    # HEART BEAT TEMPLATE (PQRST) FEATURES
     try:
         hb_data, hb_dtype = _extract_tsfresh_from_heartbeat(
-            signals, rpeaks, mod_fs, lead_name
+            signals, rpeaks, sampling_rate, lead_name
         )
 
         # cast into numpy array, parse back out values and dtypes
@@ -1843,9 +1837,17 @@ def get_structured_lead_features(lead_signal, sampling_rate=500, lead_name=""):
                 data.append(float("nan"))
                 dtype.append((key, "f8"))
 
+    # LONG SIGNAL (~10sec) FEATURES
     try:
+        if signals is None:
+            ecg_cleaned = nk.ecg_clean(
+                lead_signal, sampling_rate=sampling_rate, method="neurokit"
+            )
+
+            signals = pd.DataFrame({"ECG_Raw": lead_signal, "ECG_Clean": ecg_cleaned})
+
         sig_data, sig_dtype = _extract_tsfresh_from_full_signal(
-            signals, mod_fs, lead_name
+            signals, sampling_rate, lead_name
         )
 
         data += list(sig_data.tolist()[0])
@@ -1866,6 +1868,8 @@ def _extract_neurokit2_interval_from_signal(lead_signal, sampling_rate, lead_nam
         lead_signal, sampling_rate=sampling_rate, method="neurokit"
     )
 
+    signals = pd.DataFrame({"ECG_Raw": lead_signal, "ECG_Clean": ecg_cleaned})
+
     # R-peaks
     instant_peaks, rpeaks, = nk.ecg_peaks(
         ecg_cleaned=ecg_cleaned,
@@ -1882,13 +1886,8 @@ def _extract_neurokit2_interval_from_signal(lead_signal, sampling_rate, lead_nam
         ecg_cleaned, rpeaks=rpeaks["ECG_R_Peaks"], sampling_rate=sampling_rate
     )
 
-    signals = pd.DataFrame(
-        {
-            "ECG_Raw": lead_signal,
-            "ECG_Clean": ecg_cleaned,
-            "ECG_Rate": rate,
-            "ECG_Quality": quality,
-        }
+    signals = pd.concat(
+        [signals, pd.DataFrame({"ECG_Rate": rate, "ECG_Quality": quality,})], axis=1
     )
 
     # Additional info of the ecg signal
@@ -1919,16 +1918,25 @@ def _extract_neurokit2_interval_from_signal(lead_signal, sampling_rate, lead_nam
 
 
 def _extract_tsfresh_from_full_signal(signals, sampling_rate, lead_name):
-    lead_signal = signals["ECG_Clean"]
-    sig_num_samples = len(lead_signal)
-    sig_duration = sig_num_samples / sampling_rate
+    lead_signal = signals["ECG_Clean"].to_numpy()
+
+    # convert to 200Hz
+    mod_fs = 200
+    len_mod_fs = int(len(lead_signal) / sampling_rate * mod_fs)
+    lead_signal_mod_fs = sp.signal.resample(lead_signal, len_mod_fs)
+
+    # HARD LIMIT TO 10 SECONDS
+    lead_signal_mod_fs = lead_signal_mod_fs[:2000]
+
+    sig_num_samples = len(lead_signal_mod_fs)
+    sig_duration = sig_num_samples / mod_fs
     sig_times = np.linspace(0, sig_duration, sig_num_samples).tolist()
 
     sig_input_df = pd.DataFrame(
         {
             "lead": [lead_name,] * sig_num_samples,
             "time": sig_times,
-            "lead_sig": lead_signal.tolist(),
+            "lead_sig": lead_signal_mod_fs.tolist(),
         }
     )
 

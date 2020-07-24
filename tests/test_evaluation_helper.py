@@ -23,10 +23,11 @@ class TestEvaluationHelper(unittest.TestCase):
 
         cls.input_files = input_files
 
+    @unittest.skip("TODO: too slow with large .data_cache.sav")
     def test_evaluation_helper(self):
         # load the trained test model
         loaded_model = joblib.load("tests/model/finalized_model_1594757805.sav")
-        data_cache = joblib.load(".data_cache.sav")
+        data_cache = joblib.load(".data_cache.sav", mmap_mode="r")
 
         test_files = sorted(
             [
