@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import os
 import json
+import os
 import time
 from glob import glob
 
@@ -12,8 +12,9 @@ from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
 from feature_extractor import hea_fp_to_np_array, structured_np_array_to_features
-from util.evaluation_helper import train_evaluate_score_batch_helper
 from util.evaluate_12ECG_score import load_table
+from util.evaluation_helper import train_evaluate_score_batch_helper
+from util.elapsed_timer import ElapsedTimer
 
 
 def train_12ECG_classifier(
@@ -23,6 +24,7 @@ def train_12ECG_classifier(
     early_stopping_rounds=20,
     test_size=0.2,
     weights_file="weights.csv",
+    experiments_to_run=100,
 ):
     print("Loading data...")
     header_files = tuple(
@@ -30,56 +32,7 @@ def train_12ECG_classifier(
     )
 
     print(f"Number of files: {len(header_files)}")
-
-    if os.path.isfile(data_cache_fp):
-        print(f"Loading cached dataset from '{data_cache_fp}'")
-        data_cache = joblib.load(data_cache_fp, mmap_mode="r")
-    else:
-        # CHUNK THE HEADER FILES
-        chunk_size = 100
-        chunk_idx = 0
-        chunk = 0
-        while chunk_idx < len(header_files):
-            data_cache = np.concatenate(
-                joblib.Parallel(
-                    verbose=1,
-                    n_jobs=-1,
-                    backend="multiprocessing",  # "loky", "threading"
-                )(
-                    joblib.delayed(hea_fp_to_np_array)(hea_fp)
-                    for hea_fp in header_files[chunk_idx:chunk_idx + chunk_size]
-                )
-            )
-            chunk_data_cache_fp = f"{data_cache_fp}.{chunk}"
-            print(f"Saving cache of dataset chunk to '{chunk_data_cache_fp}'")
-            joblib.dump(data_cache, chunk_data_cache_fp)
-
-            chunk_idx += chunk_size
-            chunk += 1
-
-        # join all of the chunks into a single numpy file
-        chunk_file_paths = glob(f"{data_cache_fp}.*")
-        chunk_files = []
-        for chunk_fp in chunk_file_paths:
-            chunk_file = joblib.load(chunk_fp, mmap_mode="r")
-            chunk_files.append(chunk_file)
-
-        print(f"Saving cache of dataset to '{data_cache_fp}'")
-        data_cache = np.concatenate(chunk_files)
-        joblib.dump(data_cache, data_cache_fp)
-
-    # Split the data into train and evaluation sets
-    data_train, data_eval = train_test_split(data_cache, test_size=test_size)
-
-    # trainers throw an error when structured arrays passed, convert to unstructured
-    raw_data_train = structured_np_array_to_features(data_train)
-    raw_data_eval = structured_np_array_to_features(data_eval)
-
-    # also store the split for analysis
-    to_save_data = {
-        "train_records": data_train["record_name"].tolist(),
-        "eval_records": data_eval["record_name"].tolist(),
-    }
+    data_cache = _generate_data_cache(data_cache_fp, header_files)
 
     # Load the SNOMED CT code mapping table
     with open("data/snomed_ct_dx_map.json", "r") as f:
@@ -94,47 +47,103 @@ def train_12ECG_classifier(
 
     print("Training models...")
 
-    for idx_sc, sc in enumerate(scored_codes):
-        _abbrv, dx = SNOMED_CODE_MAP[str(sc)]
-        print(f"Training classifier for {dx} (code {sc})...")
+    for experiment_id in range(experiments_to_run):
+        with ElapsedTimer() as timer:
+            print(f"Experiment {experiment_id} start")
 
-        label_weights = all_weights[idx_sc]
+            # Split the data into train and evaluation sets
+            data_train, data_eval = train_test_split(data_cache, test_size=test_size)
 
-        train_labels, train_weights = _determine_sample_weights(
-            data_train, scored_codes, label_weights
-        )
+            # trainers throw an error when structured arrays passed, convert to unstructured
+            raw_data_train = structured_np_array_to_features(data_train)
+            raw_data_eval = structured_np_array_to_features(data_eval)
 
-        eval_labels, eval_weights = _determine_sample_weights(
-            data_eval, scored_codes, label_weights
-        )
+            # also store the split for analysis
+            to_save_data = {
+                "train_records": data_train["record_name"].tolist(),
+                "eval_records": data_eval["record_name"].tolist(),
+            }
 
-        # default
-        # scale_pos_weight = 1
+            for idx_sc, sc in enumerate(scored_codes):
+                _abbrv, dx = SNOMED_CODE_MAP[str(sc)]
+                print(f"Training classifier for {dx} (code {sc})...")
 
-        # try negative over positive https://machinelearningmastery.com/xgboost-for-imbalanced-classification/
-        pos_count = len([e for e in eval_labels if e])
-        scale_pos_weight = (len(eval_labels) - pos_count) / pos_count
+                sc, model = _train_label_classifier(
+                    sc,
+                    idx_sc,
+                    all_weights,
+                    data_train,
+                    raw_data_train,
+                    data_eval,
+                    raw_data_eval,
+                    scored_codes,
+                    early_stopping_rounds,
+                )
 
-        model = XGBClassifier(
-            booster="gbtree",  # gbtree, dart or gblinear
-            verbosity=0,
-            tree_method="gpu_hist",
-            sampling_method="gradient_based",
-            scale_pos_weight=scale_pos_weight,
-        )
+                to_save_data[sc] = model
 
-        model = model.fit(
-            raw_data_train,
-            train_labels,
-            sample_weight=train_weights,
-            eval_set=[(raw_data_train, train_labels), (raw_data_eval, eval_labels)],
-            sample_weight_eval_set=[train_weights, eval_weights],
-            early_stopping_rounds=early_stopping_rounds,
-            verbose=False,
-        )
+            _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data)
+            _save_experiment(output_directory, to_save_data)
+        print(f"Experiment {experiment_id} took {timer.duration:.2f} seconds")
 
-        to_save_data[sc] = model
 
+def _train_label_classifier(
+    sc,
+    idx_sc,
+    all_weights,
+    data_train,
+    raw_data_train,
+    data_eval,
+    raw_data_eval,
+    scored_codes,
+    early_stopping_rounds,
+):
+    label_weights = all_weights[idx_sc]
+
+    train_labels, train_weights = _determine_sample_weights(
+        data_train, scored_codes, label_weights
+    )
+
+    eval_labels, eval_weights = _determine_sample_weights(
+        data_eval, scored_codes, label_weights
+    )
+
+    # try negative over positive https://machinelearningmastery.com/xgboost-for-imbalanced-classification/
+    pos_count = len([e for e in eval_labels if e])
+    scale_pos_weight = (len(eval_labels) - pos_count) / pos_count
+
+    model = XGBClassifier(
+        booster="dart",  # gbtree, dart or gblinear
+        verbosity=0,
+        tree_method="gpu_hist",
+        sampling_method="gradient_based",
+        scale_pos_weight=scale_pos_weight,
+    )
+
+    model = model.fit(
+        raw_data_train,
+        train_labels,
+        sample_weight=train_weights,
+        eval_set=[(raw_data_train, train_labels), (raw_data_eval, eval_labels)],
+        sample_weight_eval_set=[train_weights, eval_weights],
+        early_stopping_rounds=early_stopping_rounds,
+        verbose=False,
+    )
+
+    return sc, model
+
+
+def _save_experiment(output_directory, to_save_data):
+    print("Saving model...")
+
+    cur_sec = int(time.time())
+    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
+    joblib.dump(to_save_data, filename, protocol=0)
+
+    print(f"Saved to {filename}")
+
+
+def _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data):
     # Calculate the challenge related metrics on the evaluation data set
     print("Calculating challenge related metrics")
     (
@@ -165,16 +174,51 @@ def train_12ECG_classifier(
     to_save_data["g_beta_measure"] = g_beta_measure
     to_save_data["challenge_metric"] = challenge_metric
 
-    print("Saving model...")
 
-    cur_sec = int(time.time())
-    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
-    joblib.dump(to_save_data, filename, protocol=0)
+def _generate_data_cache(data_cache_fp, header_files):
+    if os.path.isfile(data_cache_fp):
+        print(f"Loading cached dataset from '{data_cache_fp}'")
+        data_cache = joblib.load(data_cache_fp, mmap_mode="r")
+    else:
+        # CHUNK THE HEADER FILES
+        chunk_size = 100
+        chunk_idx = 0
+        chunk = 0
+        while chunk_idx < len(header_files):
+            data_cache = np.concatenate(
+                joblib.Parallel(
+                    verbose=1,
+                    n_jobs=-1,
+                    backend="multiprocessing",  # "loky", "threading"
+                )(
+                    joblib.delayed(hea_fp_to_np_array)(hea_fp)
+                    for hea_fp in header_files[chunk_idx : chunk_idx + chunk_size]
+                )
+            )
+            chunk_data_cache_fp = f"{data_cache_fp}.{chunk}"
+            print(f"Saving cache of dataset chunk to '{chunk_data_cache_fp}'")
+            joblib.dump(data_cache, chunk_data_cache_fp)
 
-    print(f"Saved to {filename}")
+            chunk_idx += chunk_size
+            chunk += 1
+
+        # join all of the chunks into a single numpy file
+        chunk_file_paths = glob(f"{data_cache_fp}.*")
+        chunk_files = []
+        for chunk_fp in chunk_file_paths:
+            chunk_file = joblib.load(chunk_fp, mmap_mode="r")
+            chunk_files.append(chunk_file)
+
+        print(f"Saving cache of dataset to '{data_cache_fp}'")
+        data_cache = np.concatenate(chunk_files)
+        joblib.dump(data_cache, data_cache_fp)
+
+    return data_cache
 
 
-def _determine_sample_weights(data_set, scored_codes, label_weights, weight_threshold=0.5):
+def _determine_sample_weights(
+    data_set, scored_codes, label_weights, weight_threshold=0.5
+):
     """Using the scoring labels weights to increase the dataset size of positive labels
     """
     data_labels = []
