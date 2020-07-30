@@ -1,13 +1,28 @@
 # This file attempts to replicate the
 # neurokit2.ecg_process and ecg_interval_related methods,
 # but vectorized to support multi-lead ECGs without loops.
+import functools
+
 import neurokit2 as nk
 import numpy as np
 import pandas as pd
 import scipy
 import scipy.signal
 
-ECG_LEAD_NAMES = ("I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6")
+ECG_LEAD_NAMES = (
+    "I",
+    "II",
+    "III",
+    "aVR",
+    "aVL",
+    "aVF",
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "V5",
+    "V6",
+)
 
 
 def ecg_clean(ecg_signal, sampling_rate=500):
@@ -38,7 +53,7 @@ def ecg_clean(ecg_signal, sampling_rate=500):
 def ecg_peaks(ecg_signal, sampling_rate=500, ecg_lead_names=ECG_LEAD_NAMES):
     """
     somewhat parallelized version of nk.ecg_peaks(method='neurokit', correct_artifacts=True)
-    
+
     each lead may have different dimensioned peaks anyways,
     so parallelization of the peak fixing/detection is not trivial
     """
@@ -50,45 +65,89 @@ def ecg_peaks(ecg_signal, sampling_rate=500, ecg_lead_names=ECG_LEAD_NAMES):
     info = {}
 
     # correct artifacts
-    for lead_idx, rpeaks in enumerate(lead_rpeaks):
-        _, rpeaks = nk.signal_fixpeaks(
-            {"ECG_R_Peaks": rpeaks},
+    signals_info = map(
+        functools.partial(
+            _ecg_peaks_partial,
             sampling_rate=sampling_rate,
-            iterative=True,
-            method="Kubios",
-        )
-        lead_rpeaks[lead_idx] = rpeaks
-        rpeaks_info = {"ECG_R_Peaks": rpeaks}
+            lead_rpeaks=lead_rpeaks,
+            ecg_signal=ecg_signal,
+            ecg_lead_names=ecg_lead_names,
+        ),
+        enumerate(lead_rpeaks),
+    )
 
-        # nk.signal_formatpeaks()
-        if len(rpeaks) > 0:
-            instant_peaks = nk.signal_formatpeaks(
-                rpeaks_info, desired_length=len(ecg_signal), peak_indices=rpeaks_info
-            )
-        else:
-            instant_peaks = pd.DataFrame({"ECG_R_Peaks": [0.0,] * len(ecg_signal)})
-        instant_peaks["ECG_Sig_Name"] = ecg_lead_names[lead_idx]
-        signals.append(instant_peaks)
-        info[lead_idx] = rpeaks_info
-
+    signals, info = zip(*signals_info)
     signals = pd.concat(signals)
     return signals, info
 
 
-def signal_rate(peaks, sampling_rate=500, desired_length=None):
+def _ecg_peaks_partial(
+    lead_idx_rpeaks,
+    sampling_rate=500,
+    lead_rpeaks=None,
+    ecg_signal=None,
+    ecg_lead_names=None,
+):
+    lead_idx, rpeaks = lead_idx_rpeaks
+
+    _, rpeaks = nk.signal_fixpeaks(
+        {"ECG_R_Peaks": rpeaks},
+        sampling_rate=sampling_rate,
+        iterative=True,
+        method="Kubios",
+    )
+    lead_rpeaks[lead_idx] = rpeaks
+    rpeaks_info = {"ECG_R_Peaks": rpeaks}
+
+    # nk.signal_formatpeaks()
+    if len(rpeaks) > 0:
+        instant_peaks = nk.signal_formatpeaks(
+            rpeaks_info, desired_length=len(ecg_signal), peak_indices=rpeaks_info
+        )
+    else:
+        instant_peaks = pd.DataFrame({"ECG_R_Peaks": [0.0,] * len(ecg_signal)})
+    instant_peaks["ECG_Sig_Name"] = ecg_lead_names[lead_idx]
+
+    return instant_peaks, rpeaks_info
+
+
+def signal_rate(all_r_peaks, sampling_rate=500, desired_length=None):
     """
     somewhat parallelized version of nk.signal_rate(interpolation_method="monotone_cubic")
 
-    peaks: info dictionary from ecg_peaks return
+    all_r_peaks: infos from ecg_peaks return
     """
 
-    # Sanity checks.
-    if len(peaks) <= 3:
-        print(
-            "NeuroKit warning: _signal_formatpeaks(): too few peaks detected"
-            " to compute the rate. Returning empty vector."
+    rate = dict(
+        map(
+            functools.partial(
+                _signal_rate_partial,
+                sampling_rate=sampling_rate,
+                desired_length=desired_length,
+            ),
+            enumerate(all_r_peaks),
         )
-        return np.full(desired_length, np.nan)
+    )
+
+    return rate
+
+
+def _signal_rate_partial(kv, sampling_rate=500, desired_length=None):
+    k, v = kv
+    peaks = v["ECG_R_Peaks"]
+
+    # Sanity checks.
+    if len(peaks) < 3:
+        # needs at least 3 peaks to compute rate, otherwise NaN
+        return k, np.full(desired_length, np.nan)
+
+    # edge case if peaks desired length request is larger than max peak index
+    while desired_length <= peaks[-1]:
+        peaks = peaks[:-1]
+
+    if len(peaks) < 3:
+        # needs at least 3 peaks to compute rate, otherwise NaN
+        return k, np.full(desired_length, np.nan)
 
     # Calculate period in sec, based on peak to peak difference and make sure
     # that rate has the same number of elements as peaks (important for
@@ -97,14 +156,20 @@ def signal_rate(peaks, sampling_rate=500, desired_length=None):
     period[0] = np.mean(period[1:])
 
     # Interpolate all statistics to desired length.
-    if desired_length != np.size(peaks):
-        period = signal_interpolate(peaks, period, x_new=np.arange(desired_length), method=interpolation_method)
+    if desired_length is not None:
+        x_new = np.arange(desired_length)
 
-    rate = 60 / period
+        period = scipy.interpolate.PchipInterpolator(peaks, period, extrapolate=True)(
+            x_new
+        )
 
-    return rate
+        # Swap out the cubic extrapolation of out-of-bounds segments generated by
+        # scipy.interpolate.PchipInterpolator for constant extrapolation akin to the behavior of
+        # scipy.interpolate.interp1d with fill_value=([period[0]], [period[-1]].
+        period[: peaks[0]] = period[peaks[0]]
+        period[peaks[-1] :] = period[peaks[-1]]  # noqa: E203
 
-    pass
+    return k, 60 / period
 
 
 def _ecg_findpeaks_neurokit(

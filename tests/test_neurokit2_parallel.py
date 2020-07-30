@@ -99,15 +99,29 @@ class TestNeurokit2Parallel(unittest.TestCase):
             signals, info = ecg_peaks(
                 cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
             )
-            
+
+            ref_rates = {}
             for lead_idx, sig_name in enumerate(r.sig_name):
                 # par_signal = signals[
                 #     signals["ECG_Sig_Name"] == r.sig_name[lead_idx]
                 # ]
                 par_info = info[lead_idx]
 
-                ref_rate = nk.signal_rate(par_info, sampling_rate=r.fs)
-                par_rate = signal_rate(info)
+                ref_rate = nk.signal_rate(
+                    par_info, sampling_rate=r.fs, desired_length=sig_len
+                )
+                ref_rates[lead_idx] = ref_rate
 
-                # TODO: fix
-                self.assertEqual(ref_rate, par_rate)
+            par_rate = signal_rate(info, sampling_rate=r.fs, desired_length=sig_len)
+            for k, ref_rate in ref_rates.items():
+                if not (par_rate[k] == ref_rate).all():
+                    # check that they are both all NaN
+                    self.assertTrue(
+                        np.isnan(ref_rate).all() and np.isnan(par_rate[k]).all(),
+                        f"{mat_record_fp} lead_idx {lead_idx}",
+                    )
+                else:
+                    self.assertTrue(
+                        (par_rate[k] == ref_rate).all(),
+                        f"{mat_record_fp} lead_idx {lead_idx}",
+                    )
