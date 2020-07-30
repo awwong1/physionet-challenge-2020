@@ -26,6 +26,12 @@
                 "tests/output"
             ],
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Debug Tests",
+            "type": "python",
+            "request": "test",
+            "justMyCode": false
         }
     ]
 }

@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 # Don't upload the training data
-data/PhysioNetChallenge2020_Training*.tar.gz
+data/PhysioNetChallenge2020_*.tar.gz
 data/**/*.hea
 data/**/*.mat
 .data_cache.sav
