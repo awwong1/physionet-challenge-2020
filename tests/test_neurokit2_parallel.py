@@ -7,7 +7,7 @@ import wfdb
 
 import neurokit2 as nk
 
-from neurokit2_parallel import ecg_clean, ecg_peaks, signal_rate
+from neurokit2_parallel import ecg_clean, ecg_peaks, signal_rate, ecg_quality
 
 
 class TestNeurokit2Parallel(unittest.TestCase):
@@ -125,3 +125,32 @@ class TestNeurokit2Parallel(unittest.TestCase):
                         (par_rate[k] == ref_rate).all(),
                         f"{mat_record_fp} lead_idx {lead_idx}",
                     )
+
+    def test_ecg_quality(self):
+        # for mat_record_fp in self.all_mat_records:
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+            sig_len, num_leads = cleaned_signals.shape
+
+            signals, info = ecg_peaks(
+                cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+
+            ref_quality = {}
+            for lead_idx, sig_name in enumerate(r.sig_name):
+                ecg_cleaned = cleaned_signals[:, lead_idx]
+                rpeaks = info[lead_idx]["ECG_R_Peaks"]
+
+                ref = nk.ecg_quality(
+                    ecg_cleaned, rpeaks=rpeaks, sampling_rate=r.fs
+                )
+                ref_quality[lead_idx] = ref
+
+            ecg_quality(cleaned_signals, info, sampling_rate=r.fs)
+
+            self.assertTrue(False, "todo")
