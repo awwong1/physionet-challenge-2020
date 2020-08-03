@@ -2,9 +2,11 @@ import csv
 import multiprocessing
 import os
 import queue
+import re
 from glob import glob
 from datetime import datetime, timedelta
 
+import numpy as np
 import wfdb
 import tsfresh
 
@@ -21,7 +23,7 @@ from neurokit2_parallel import (
 
 
 def _get_fieldnames():
-    field_names = []
+    field_names = ["age", "sex"]
     for lead_name in ECG_LEAD_NAMES:
         for key in KEYS_INTERVALRELATED:
             field_names.append(f"{lead_name}_{key}")
@@ -47,6 +49,34 @@ def feat_extract_process(
             break
         r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
 
+        age = float("nan")
+        sex = float("nan")
+
+        dx = []
+        for comment in r.comments:
+            dx_grp = re.search(r"Dx: (?P<dx>.*)$", comment)
+            if dx_grp:
+                raw_dx = dx_grp.group("dx").split(",")
+                for dxi in raw_dx:
+                    snomed_code = int(dxi)
+                    dx.append(snomed_code)
+                continue
+
+            age_grp = re.search(r"Age: (?P<age>.*)$", comment)
+            if age_grp:
+                age = float(age_grp.group("age"))
+                if not np.isfinite(age):
+                    age = float("nan")
+                continue
+
+            sx_grp = re.search(r"Sex: (?P<sx>.*)$", comment)
+            if sx_grp:
+                if sx_grp.group("sx").upper().startswith("F"):
+                    sex = 1.0
+                elif sx_grp.group("sx").upper().startswith("M"):
+                    sex = 0.0
+                continue
+
         r.sig_name = ECG_LEAD_NAMES  # force consistent naming
 
         cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
@@ -64,7 +94,7 @@ def feat_extract_process(
             best_heartbeat_df,
             column_id="lead",
             column_sort="time",
-            n_jobs=0,
+            n_jobs=1,
             disable_progressbar=True,
         )
 
@@ -76,12 +106,12 @@ def feat_extract_process(
             signal_df,
             column_id="lead",
             column_sort="time",
-            n_jobs=0,
+            n_jobs=4,
             disable_progressbar=True,
         )
 
         # flatten and combine three feature vectors into single hashable item
-        ecg_features = {}
+        ecg_features = {"age": age, "sex": sex}
         for lead_name in r.sig_name:
             irf_groupby = intervalrelated_features.groupby("ECG_Sig_Name")
             irf_group = irf_groupby.get_group(lead_name)
@@ -98,7 +128,7 @@ def feat_extract_process(
                     lead_name
                 ][sig_key]
 
-        output_queue.put(ecg_features)
+        output_queue.put((ecg_features, dx))
 
 
 def train_12ECG_classifier(input_directory, output_directory):
@@ -106,7 +136,7 @@ def train_12ECG_classifier(input_directory, output_directory):
 
     logger.info("Finding input files...")
     header_files = tuple(
-        glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+        sorted(glob(os.path.join(input_directory, "**/*.hea"), recursive=True))
     )
 
     logger.info("Number of ECG records: %d", len(header_files))
@@ -138,26 +168,27 @@ def train_12ECG_classifier(input_directory, output_directory):
     with open("features.csv", "w", newline="\n") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
         writer.writeheader()
-
-        while True:
-            try:
-                f_dict = output_queue.get(True, 0.1)
-                writer.writerow(f_dict)
-                output_queue.task_done()
-                processed_files_counter += 1
-            except queue.Empty:
-                # When the output queue is empty and all workers are terminated
-                # all files have been processed
-                if all(not p.is_alive() for p in feature_extractor_procs):
-                    break
-            finally:
-                out_cur = datetime.now()
-                if out_log is None or out_cur - out_log > timedelta(seconds=5):
-                    start_delta = out_cur - out_start
-                    logger.info(
-                        f"Processed {processed_files_counter}/{len(header_files)} in {start_delta}"
-                    )
-                    out_log = out_cur
+        with open("dxs.txt", "w") as labelfile:
+            while True:
+                try:
+                    f_dict, dxs = output_queue.get(True, 0.1)
+                    labelfile.write(f"{dxs}\n")
+                    writer.writerow(f_dict)
+                    output_queue.task_done()
+                    processed_files_counter += 1
+                except queue.Empty:
+                    # When the output queue is empty and all workers are terminated
+                    # all files have been processed
+                    if all(not p.is_alive() for p in feature_extractor_procs):
+                        break
+                finally:
+                    out_cur = datetime.now()
+                    if out_log is None or out_cur - out_log > timedelta(seconds=5):
+                        start_delta = out_cur - out_start
+                        logger.info(
+                            f"Processed {processed_files_counter}/{len(header_files)} in {start_delta}"
+                        )
+                        out_log = out_cur
 
     out_cur = datetime.now()
     start_delta = out_cur - out_start
