@@ -1069,7 +1069,8 @@ def _signal_rate_partial(kv, sampling_rate=500, desired_length=None):
     # Interpolate all statistics to desired length.
     if desired_length is not None:
         x_new = np.arange(desired_length)
-
+        peaks = np.sort(peaks)
+        period = np.sort(period)
         period = scipy.interpolate.PchipInterpolator(peaks, period, extrapolate=True)(
             x_new
         )
