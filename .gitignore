@@ -137,3 +137,4 @@ data/**/*.mat
 
 # Don't upload the models
 model*/**/*.sav
+features.csv

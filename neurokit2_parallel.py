@@ -1295,3 +1295,45 @@ def best_heartbeats_from_ecg_signal(
         best_heartbeats.append(hb_input_df)
     best_heartbeats = pd.concat(best_heartbeats)
     return best_heartbeats
+
+
+def signal_to_tsfresh_df(
+    cleaned_signals,
+    sampling_rate=500,
+    ecg_lead_names=ECG_LEAD_NAMES,
+    get_num_samples=2000,
+    mod_fs=500,
+):
+    # convert sampling rate to mod_fs
+    if sampling_rate != mod_fs:
+        len_mod_fs = int(len(cleaned_signals) / sampling_rate * mod_fs)
+        cleaned_signals = scipy.signal.resample(cleaned_signals, len_mod_fs)
+
+    # drop 1 second from the start and ends of the cleaned signals
+    cleaned_signals = cleaned_signals[mod_fs:-mod_fs]
+    num_samples, num_leads = cleaned_signals.shape
+
+    # if over get_num_samples, take middle
+    if num_samples > get_num_samples:
+        mid_point = int(num_samples / 2)
+        cleaned_signals = cleaned_signals[
+            mid_point - get_num_samples // 2 : mid_point + get_num_samples // 2  # noqa: E203
+        ]
+        num_samples, num_leads = cleaned_signals.shape
+
+    duration = num_samples / mod_fs
+    # convert to tsfresh compatible dataframe
+    df_sig_names = []
+    for ln in ecg_lead_names:
+        df_sig_names += [ln,] * num_samples
+
+    times = np.linspace(0, duration, num_samples).tolist()
+    input_df = pd.DataFrame(
+        {
+            "lead": df_sig_names,
+            "time": times * num_leads,
+            "sig": cleaned_signals.flatten(order="F"),
+        }
+    )
+
+    return input_df

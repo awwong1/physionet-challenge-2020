@@ -20,6 +20,7 @@ from neurokit2_parallel import (
     ecg_intervalrelated,
     get_intervalrelated_features,
     best_heartbeats_from_ecg_signal,
+    signal_to_tsfresh_df
 )
 
 
@@ -365,3 +366,29 @@ class TestNeurokit2Parallel(unittest.TestCase):
                 [k.split("hb_sig__")[1] for k in hb_feats.columns] == KEYS_TSFRESH
             )
 
+    def test_signal_to_tsfresh_df(self):
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+
+            lead_signals = signal_to_tsfresh_df(
+                cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+            self.assertTrue(
+                (lead_signals.columns == ["lead", "time", "sig"]).all()
+            )
+
+            hb_feats = tsfresh.extract_features(
+                lead_signals,
+                column_id="lead",
+                column_sort="time",
+                disable_progressbar=True,
+                n_jobs=0,
+            )
+
+            self.assertTrue(
+                [k.split("sig__")[1] for k in hb_feats.columns] == KEYS_TSFRESH
+            )
