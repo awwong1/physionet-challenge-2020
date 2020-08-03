@@ -918,6 +918,9 @@ def _ecg_peaks_partial(
         iterative=True,
         method="Kubios",
     )
+
+    # rpeaks not guaranteed to be sorted in increasing order?
+    rpeaks = np.sort(rpeaks)
     lead_rpeaks[lead_idx] = rpeaks
     rpeaks_info = {"ECG_R_Peaks": rpeaks}
 
