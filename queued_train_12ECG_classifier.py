@@ -150,8 +150,8 @@ def train_12ECG_classifier(input_directory, output_directory):
         input_queue.put_nowait(header_file)
     output_queue = multiprocessing.JoinableQueue()
 
-    # all CPUs except 1 used for feature extraction
-    num_feature_extractor_procs = max(num_cpus - 1, 1)
+    # all CPUs used for feature extraction
+    num_feature_extractor_procs = max(num_cpus, 1)
     feature_extractor_procs = []
     for _ in range(num_feature_extractor_procs):
         p = multiprocessing.Process(
@@ -173,6 +173,7 @@ def train_12ECG_classifier(input_directory, output_directory):
                 try:
                     f_dict, dxs = output_queue.get(True, 0.1)
                     labelfile.write(f"{dxs}\n")
+                    labelfile.flush()
                     writer.writerow(f_dict)
                     output_queue.task_done()
                     processed_files_counter += 1
