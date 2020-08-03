@@ -3,11 +3,24 @@ from glob import glob
 
 import numpy as np
 import pandas as pd
+import tsfresh
 import wfdb
 
 import neurokit2 as nk
 
-from neurokit2_parallel import ecg_clean, ecg_peaks, signal_rate, ecg_quality
+from neurokit2_parallel import (
+    ECG_LEAD_NAMES,
+    KEYS_INTERVALRELATED,
+    KEYS_TSFRESH,
+    ecg_clean,
+    ecg_peaks,
+    signal_rate,
+    ecg_quality,
+    ecg_delineate,
+    ecg_intervalrelated,
+    get_intervalrelated_features,
+    best_heartbeats_from_ecg_signal,
+)
 
 
 class TestNeurokit2Parallel(unittest.TestCase):
@@ -146,11 +159,209 @@ class TestNeurokit2Parallel(unittest.TestCase):
                 ecg_cleaned = cleaned_signals[:, lead_idx]
                 rpeaks = info[lead_idx]["ECG_R_Peaks"]
 
-                ref = nk.ecg_quality(
-                    ecg_cleaned, rpeaks=rpeaks, sampling_rate=r.fs
-                )
+                try:
+                    ref = nk.ecg_quality(ecg_cleaned, rpeaks=rpeaks, sampling_rate=r.fs)
+                except Exception:
+                    ref = np.full(sig_len, np.nan)
                 ref_quality[lead_idx] = ref
 
-            ecg_quality(cleaned_signals, info, sampling_rate=r.fs)
+            par_quality = ecg_quality(cleaned_signals, info, sampling_rate=r.fs)
 
-            self.assertTrue(False, "todo")
+            for k, v in ref_quality.items():
+                if not (par_quality[k] == v).all():
+                    # check that they are both all NaN
+                    self.assertTrue(
+                        np.isnan(v).all() and np.isnan(par_quality[k]).all(),
+                        f"{mat_record_fp} lead_idx {lead_idx}",
+                    )
+                else:
+                    self.assertTrue(
+                        (par_quality[k] == v).all(),
+                        f"{mat_record_fp} lead_idx {lead_idx}",
+                    )
+
+    def test_ecg_delineate(self):
+        # for mat_record_fp in self.all_mat_records:
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+            sig_len, num_leads = cleaned_signals.shape
+
+            signals, info = ecg_peaks(
+                cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+
+            ref_delineate = []
+            for lead_idx, sig_name in enumerate(r.sig_name):
+                ecg_cleaned = cleaned_signals[:, lead_idx]
+                rpeaks = info[lead_idx]
+
+                try:
+                    ref = nk.ecg_delineate(
+                        ecg_cleaned=ecg_cleaned, rpeaks=rpeaks, sampling_rate=r.fs
+                    )
+                except Exception:
+                    ref = (
+                        pd.DataFrame(
+                            {
+                                "ECG_P_Peaks": [0.0,] * sig_len,
+                                "ECG_Q_Peaks": [0.0,] * sig_len,
+                                "ECG_S_Peaks": [0.0,] * sig_len,
+                                "ECG_T_Peaks": [0.0,] * sig_len,
+                                "ECG_P_Onsets": [0.0,] * sig_len,
+                                "ECG_T_Offsets": [0.0,] * sig_len,
+                            }
+                        ),
+                        {
+                            "ECG_P_Peaks": [],
+                            "ECG_Q_Peaks": [],
+                            "ECG_S_Peaks": [],
+                            "ECG_T_Peaks": [],
+                            "ECG_P_Onsets": [],
+                            "ECG_T_Offsets": [],
+                        },
+                    )
+                ref_delineate.append(ref)
+
+            par_delineate_df, par_delineate_info = ecg_delineate(
+                cleaned_signals, info, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+
+            for lead_idx, output_ref in enumerate(ref_delineate):
+                ref_delineate, ref_info = output_ref
+                par_delineate_df_inst = par_delineate_df[
+                    par_delineate_df["ECG_Sig_Name"] == r.sig_name[lead_idx]
+                ]
+                par_delineate_info_inst = par_delineate_info[lead_idx]
+
+                self.assertTrue(ref_info == par_delineate_info_inst)
+
+                for key in [
+                    "ECG_P_Peaks",
+                    "ECG_Q_Peaks",
+                    "ECG_S_Peaks",
+                    "ECG_T_Peaks",
+                    "ECG_P_Onsets",
+                    "ECG_T_Offsets",
+                ]:
+                    self.assertTrue(
+                        (par_delineate_df_inst[key] == ref_delineate[key]).all()
+                    )
+
+    def test_ecg_intervalrelated(self):
+        # for mat_record_fp in self.all_mat_records:
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+            sig_len, num_leads = cleaned_signals.shape
+
+            df_sig_names = []
+            for ln in ECG_LEAD_NAMES:
+                df_sig_names += [ln,] * sig_len
+
+            peaks_df, peaks_info = ecg_peaks(
+                cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+
+            # non-df outputs...
+            rate = signal_rate(peaks_info, sampling_rate=r.fs, desired_length=sig_len)
+            quality = ecg_quality(cleaned_signals, peaks_info, sampling_rate=r.fs)
+
+            rate_values = np.concatenate(
+                [rate[lead_idx] for lead_idx in range(num_leads)]
+            )
+            quality_values = np.concatenate(
+                [quality[lead_idx] for lead_idx in range(num_leads)]
+            )
+
+            proc_df = pd.DataFrame(
+                {
+                    "ECG_Raw": r.p_signal.flatten(order="F"),
+                    "ECG_Clean": cleaned_signals.flatten(order="F"),
+                    "ECG_Sig_Name": df_sig_names,
+                    "ECG_R_Peaks": peaks_df["ECG_R_Peaks"],
+                    "ECG_Rate": rate_values,
+                    "ECG_Quality": quality_values,
+                }
+            )
+
+            record_feats = []
+            for lead_name in ECG_LEAD_NAMES:
+                try:
+                    ip_df = proc_df[proc_df["ECG_Sig_Name"] == lead_name]
+                    lead_feats = nk.ecg_intervalrelated(ip_df, sampling_rate=r.fs)
+                except Exception:
+                    lead_feats = pd.DataFrame.from_dict(
+                        dict((k, (np.nan,)) for k in KEYS_INTERVALRELATED)
+                    )
+                finally:
+                    lead_feats["ECG_Sig_Name"] = lead_name
+                record_feats.append(lead_feats)
+
+            record_feats = pd.concat(record_feats)
+            whole_feats = ecg_intervalrelated(proc_df, sampling_rate=r.fs)
+
+            self.assertTrue(
+                ((record_feats.fillna(0.0) == whole_feats.fillna(0.0)).all()).all()
+            )
+
+    def test_get_intervalrelated_features(self):
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+
+            ir_features, _ = get_intervalrelated_features(
+                r.p_signal,
+                cleaned_signals,
+                sampling_rate=r.fs,
+                ecg_lead_names=r.sig_name,
+            )
+            self.assertTrue(
+                (ir_features.columns == KEYS_INTERVALRELATED + ["ECG_Sig_Name",]).all()
+            )
+
+    def test_best_heartbeats_from_ecg_signal(self):
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+
+            _, proc_df = get_intervalrelated_features(
+                r.p_signal,
+                cleaned_signals,
+                sampling_rate=r.fs,
+                ecg_lead_names=r.sig_name,
+            )
+
+            lead_heartbeats = best_heartbeats_from_ecg_signal(
+                proc_df, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+            )
+            self.assertTrue(
+                (lead_heartbeats.columns == ["lead", "time", "hb_sig"]).all()
+            )
+
+            hb_feats = tsfresh.extract_features(
+                lead_heartbeats,
+                column_id="lead",
+                column_sort="time",
+                disable_progressbar=True,
+                n_jobs=0,
+            )
+
+            self.assertTrue(
+                [k.split("hb_sig__")[1] for k in hb_feats.columns] == KEYS_TSFRESH
+            )
+

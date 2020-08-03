@@ -3,7 +3,15 @@ import os
 import queue
 from glob import glob
 
+import wfdb
+import tsfresh
+
 from util.log import configure_logging
+from neurokit2_parallel import (
+    get_intervalrelated_features,
+    ecg_clean,
+    best_heartbeats_from_ecg_signal,
+)
 
 
 def feat_extract_process(
@@ -17,8 +25,23 @@ def feat_extract_process(
         except queue.Empty:
             # When the input queue is empty, worker process terminates
             break
+        r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
+        cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
 
-        output_queue.put(header_file_path)
+        # interval related features from parallel neurokit2
+        intervalrelated_features, proc_df = get_intervalrelated_features(
+            r.p_signal, cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+        )
+
+        output_queue.put(intervalrelated_features)
+
+        # tsfresh related features from heartbeats
+        best_heartbeat_df = best_heartbeats_from_ecg_signal(
+            proc_df, sampling_rate=r.fs, ecg_lead_names=r.sig_name
+        )
+        heartbeat_features = tsfresh.extract_features(
+            best_heartbeat_df, column_id="lead", column_sort="time"
+        )
 
 
 def train_12ECG_classifier(input_directory, output_directory):
