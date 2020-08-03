@@ -1075,8 +1075,8 @@ def _signal_rate_partial(kv, sampling_rate=500, desired_length=None):
                 x_new
             )
         except ValueError as e:
-            print(e)
-            print(peaks)
+            
+            print(np.diff(np.sort(peaks)).tolist())
             print(period)
             raise e
 
