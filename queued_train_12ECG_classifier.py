@@ -13,12 +13,12 @@ from neurokit2_parallel import (
     ECG_LEAD_NAMES,
     KEYS_INTERVALRELATED,
     KEYS_TSFRESH,
-    wfdb_record_to_feature_dataframe
+    wfdb_record_to_feature_dataframe,
 )
 
 
 def _get_fieldnames():
-    field_names = ["age", "sex"]
+    field_names = ["header_file", "age", "sex"]
     for lead_name in ECG_LEAD_NAMES:
         for key in KEYS_INTERVALRELATED:
             field_names.append(f"{lead_name}_{key}")
@@ -51,14 +51,16 @@ def feat_extract_process(
         output_queue.put((header_file_path, ecg_features, dx))
 
 
-def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt", features_fp="features.csv"):
+def train_12ECG_classifier(
+    input_directory, output_directory, labels_fp="dxs.txt", features_fp="features.csv"
+):
     logger = configure_logging()
 
     logger.info("Loading feature extraction result...")
     # check how many files have been processed already, allows feature extraction to be resumable
     mapped_records = {}
     if os.path.isfile(labels_fp):
-        with open(labels_fp, mode="r") as labelfile:
+        with open(labels_fp, mode="r", newline="\n") as labelfile:
             for line in labelfile.readlines():
                 header_file_path, dxs = json.loads(line)
                 mapped_records[header_file_path] = dxs
@@ -116,8 +118,9 @@ def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt
             while True:
                 try:
                     header_file_path, f_dict, dxs = output_queue.get(True, 0.1)
-                    labelfile.write(json.dumps((header_file_path, dxs)))
+                    labelfile.write(json.dumps((header_file_path, dxs)) + "\n")
                     labelfile.flush()
+                    f_dict["header_file"] = header_file_path
                     writer.writerow(f_dict)
                     output_queue.task_done()
                     processed_files_counter += 1
@@ -130,8 +133,21 @@ def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt
                     out_cur = datetime.now()
                     if out_log is None or out_cur - out_log > timedelta(seconds=5):
                         start_delta = out_cur - out_start
+
+                        avg_hours = (
+                            (
+                                len(header_files)
+                                * (
+                                    start_delta.total_seconds()
+                                    / processed_files_counter
+                                )
+                            )
+                            / 60
+                            / 60
+                        )
+
                         logger.info(
-                            f"Processed {processed_files_counter}/{len(header_files)} in {start_delta}"
+                            f"Processed {processed_files_counter}/{len(header_files)} in {start_delta} (est {avg_hours} hr)"
                         )
                         out_log = out_cur
 
