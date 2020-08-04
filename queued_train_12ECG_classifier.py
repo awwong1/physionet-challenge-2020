@@ -134,17 +134,20 @@ def train_12ECG_classifier(
                     if out_log is None or out_cur - out_log > timedelta(seconds=5):
                         start_delta = out_cur - out_start
 
-                        avg_hours = (
-                            (
-                                len(header_files)
-                                * (
-                                    start_delta.total_seconds()
-                                    / processed_files_counter
+                        if processed_files_counter > 0:
+                            avg_hours = (
+                                (
+                                    len(header_files)
+                                    * (
+                                        start_delta.total_seconds()
+                                        / processed_files_counter
+                                    )
                                 )
+                                / 60
+                                / 60
                             )
-                            / 60
-                            / 60
-                        )
+                        else:
+                            avg_hours = float("nan")
 
                         logger.info(
                             f"Processed {processed_files_counter}/{len(header_files)} in {start_delta} (est {avg_hours} hr)"
