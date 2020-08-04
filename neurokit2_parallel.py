@@ -1064,6 +1064,8 @@ def _tsfresh_signal_dataframe(
     )
     return sig_df
 
+# it was faster to just do single lead multi-process, rather than single process multi-lead :/
+
 
 def ecg_clean(ecg_signal, sampling_rate=500):
     """

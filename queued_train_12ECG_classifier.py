@@ -51,7 +51,7 @@ def feat_extract_process(
         output_queue.put((header_file_path, ecg_features, dx))
 
 
-def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt"):
+def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt", features_fp="features.csv"):
     logger = configure_logging()
 
     logger.info("Loading feature extraction result...")
@@ -104,9 +104,14 @@ def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt
     out_start = datetime.now()
     out_log = None
 
-    with open("features.csv", "w", newline="\n") as csvfile:
+    # initialize the header if the file does not exist
+    if not os.path.isfile(features_fp):
+        with open(features_fp, "w", newline="\n") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
+            writer.writeheader()
+
+    with open(features_fp, "a", newline="\n") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
-        writer.writeheader()
         with open(labels_fp, "a") as labelfile:
             while True:
                 try:
