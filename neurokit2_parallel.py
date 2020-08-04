@@ -1,6 +1,7 @@
 # This file attempts to replicate the
 # neurokit2.ecg_process and ecg_interval_related methods,
 # but vectorized to support multi-lead ECGs without loops.
+import re
 import functools
 
 import neurokit2 as nk
@@ -8,6 +9,8 @@ import numpy as np
 import pandas as pd
 import scipy
 import scipy.signal
+import tsfresh
+import joblib
 
 ECG_LEAD_NAMES = (
     "I",
@@ -847,6 +850,221 @@ KEYS_TSFRESH = [
 ]
 
 
+def parse_comments(r):
+    age = float("nan")
+    sex = float("nan")
+    dx = []
+    for comment in r.comments:
+        dx_grp = re.search(r"Dx: (?P<dx>.*)$", comment)
+        if dx_grp:
+            raw_dx = dx_grp.group("dx").split(",")
+            for dxi in raw_dx:
+                snomed_code = int(dxi)
+                dx.append(snomed_code)
+            continue
+
+        age_grp = re.search(r"Age: (?P<age>.*)$", comment)
+        if age_grp:
+            age = float(age_grp.group("age"))
+            if not np.isfinite(age):
+                age = float("nan")
+            continue
+
+        sx_grp = re.search(r"Sex: (?P<sx>.*)$", comment)
+        if sx_grp:
+            if sx_grp.group("sx").upper().startswith("F"):
+                sex = 1.0
+            elif sx_grp.group("sx").upper().startswith("M"):
+                sex = 0.0
+            continue
+    return age, sex, dx
+
+
+def wfdb_record_to_feature_dataframe(r):
+    age, sex, dx = parse_comments(r)
+    r.sig_name = ECG_LEAD_NAMES  # force consistent naming
+    cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+
+    signal_length, num_leads = cleaned_signals.shape
+
+    # each lead should be processed separately and then combined back together
+    record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
+        joblib.delayed(lead_to_feature_dataframe)(
+            r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs
+        )
+        for i in range(num_leads)
+    )
+    record_features = pd.concat([
+        pd.DataFrame({"age": (age,), "sex": (sex,)})
+    ] + record_features, axis=1)
+    return record_features, dx
+
+
+def lead_to_feature_dataframe(raw_signal, cleaned_signal, lead_name, sampling_rate):
+    signals_df = pd.DataFrame({"ECG_Raw": raw_signal, "ECG_Clean": cleaned_signal})
+
+    # Heart Rate Variability Features
+    try:
+        hrv_df, signals_df, rpeaks_info = _lead_to_interval_related_dataframe(
+            signals_df, sampling_rate
+        )
+    except Exception:
+        hrv_df = pd.DataFrame.from_dict(
+            dict((k, (np.nan,)) for k in KEYS_INTERVALRELATED)
+        )
+        signals_df = None
+        rpeaks_info = {}
+    finally:
+        # stick the lead name into all the columns
+        hrv_df = pd.DataFrame(
+            dict((f"{lead_name}_{k}", v) for (k, v) in hrv_df.to_dict().items())
+        )
+
+    # Heart Beat Template Features
+    try:
+        hb_df = _tsfresh_heartbeat_dataframe(
+            signals_df,
+            rpeaks_info["ECG_R_Peaks"],
+            sampling_rate=sampling_rate,
+            lead_name=lead_name,
+        )
+    except Exception:
+        hb_df = pd.DataFrame.from_dict(
+            dict((f"{lead_name}_hb__{k}", (np.nan,)) for k in KEYS_TSFRESH)
+        )
+
+    # Full Waveform Features
+    try:
+        sig_df = _tsfresh_signal_dataframe(
+            cleaned_signal, sampling_rate=sampling_rate, lead_name=lead_name
+        )
+    except Exception:
+        sig_df = pd.DataFrame.from_dict(
+            dict((f"{lead_name}_sig__{k}", (np.nan,)) for k in KEYS_TSFRESH)
+        )
+
+    return pd.concat([hrv_df, hb_df, sig_df], axis=1)
+
+
+def _lead_to_interval_related_dataframe(signals_df, sampling_rate):
+    rpeaks_df, rpeaks_info = nk.ecg_peaks(
+        ecg_cleaned=signals_df["ECG_Clean"].to_numpy(),
+        sampling_rate=sampling_rate,
+        method="neurokit",
+        correct_artifacts=True,
+    )
+    rate = nk.signal_rate(
+        rpeaks_info,
+        sampling_rate=sampling_rate,
+        desired_length=len(signals_df["ECG_Clean"].to_numpy()),
+    )
+    quality = nk.ecg_quality(
+        signals_df["ECG_Clean"].to_numpy(),
+        rpeaks=rpeaks_info["ECG_R_Peaks"],
+        sampling_rate=sampling_rate,
+    )
+    signals_df = pd.concat(
+        [
+            signals_df,
+            rpeaks_df,
+            pd.DataFrame({"ECG_Rate": rate, "ECG_Quality": quality}),
+        ],
+        axis=1,
+    )
+    ir_df = nk.ecg_intervalrelated(signals_df, sampling_rate=sampling_rate)
+    assert all(ir_df.columns == KEYS_INTERVALRELATED)
+    return ir_df, signals_df, rpeaks_info
+
+
+def _tsfresh_heartbeat_dataframe(signals_df, rpeaks, sampling_rate=500, lead_name="X"):
+    # Determine heart rate windows, get the best heart rate
+    heartbeats = nk.ecg_segment(
+        signals_df.rename(columns={"ECG_Clean": "Signal"}).drop(columns=["ECG_Raw"]),
+        rpeaks=rpeaks,
+        show=False,
+    )
+
+    # get the template with maximum quality and no NaN values in signal
+    best_idx = None
+    best_quality = -1
+    for k, v in heartbeats.items():
+        if not all(np.isfinite(v["Signal"])):
+            continue
+        hb_quality_stats = scipy.stats.describe(v["ECG_Quality"])
+        if hb_quality_stats.mean > best_quality:
+            best_idx = k
+            best_quality = hb_quality_stats.mean
+
+    best_heartbeat = heartbeats[best_idx]["Signal"]
+    hb_num_samples = len(best_heartbeat)
+    hb_duration = hb_num_samples / sampling_rate
+    hb_times = np.linspace(0, hb_duration, hb_num_samples).tolist()
+
+    hb_input_df = pd.DataFrame(
+        {
+            "lead": [0,] * hb_num_samples,
+            "time": hb_times,
+            f"{lead_name}_hb": best_heartbeat.tolist(),
+        }
+    )
+
+    hb_df = tsfresh.extract_features(
+        hb_input_df,
+        column_id="lead",
+        column_sort="time",
+        column_value=f"{lead_name}_hb",
+        show_warnings=False,
+        disable_progressbar=True,
+        n_jobs=0,
+    )
+
+    return hb_df
+
+
+def _tsfresh_signal_dataframe(
+    cleaned_signal, sampling_rate=500, lead_name="X", mod_fs=500, get_num_samples=2000
+):
+    # convert sampling rate to mod_fs
+    len_mod_fs = int(len(cleaned_signal) / sampling_rate * mod_fs)
+    cleaned_signal = scipy.signal.resample(cleaned_signal, len_mod_fs)
+
+    # drop 1 second from the start and ends of the cleaned signals
+    cleaned_signal = cleaned_signal[mod_fs:-mod_fs]
+
+    # if over get_num_samples, take middle
+    if len(cleaned_signal) > get_num_samples:
+        mid_point = int(len(cleaned_signal) / 2)
+        cleaned_signal = cleaned_signal[
+            mid_point
+            - get_num_samples // 2 : mid_point  # noqa: E203
+            + get_num_samples // 2
+        ]
+    num_samples = len(cleaned_signal)
+
+    duration = num_samples / mod_fs
+    # convert to tsfresh compatible dataframe
+
+    times = np.linspace(0, duration, num_samples).tolist()
+    sig_input_df = pd.DataFrame(
+        {
+            "lead": [0,] * num_samples,
+            "time": times,
+            f"{lead_name}_sig": cleaned_signal,
+        }
+    )
+
+    sig_df = tsfresh.extract_features(
+        sig_input_df,
+        column_id="lead",
+        column_sort="time",
+        column_value=f"{lead_name}_sig",
+        show_warnings=False,
+        disable_progressbar=True,
+        n_jobs=0,
+    )
+    return sig_df
+
+
 def ecg_clean(ecg_signal, sampling_rate=500):
     """
     parallelized version of nk.ecg_clean(method="neurokit")
@@ -1073,11 +1291,13 @@ def _signal_rate_partial(kv, sampling_rate=500, desired_length=None):
         x_new = np.arange(desired_length)
 
         try:
-            period = scipy.interpolate.PchipInterpolator(peaks, period, extrapolate=True)(
-                x_new
-            )
+            period = scipy.interpolate.PchipInterpolator(
+                peaks, period, extrapolate=True
+            )(x_new)
         except ValueError:
-            period = scipy.interpolate.interp1d(peaks, period, fill_value="extrapolate")(x_new)
+            period = scipy.interpolate.interp1d(
+                peaks, period, fill_value="extrapolate"
+            )(x_new)
 
         # Swap out the cubic extrapolation of out-of-bounds segments generated by
         # scipy.interpolate.PchipInterpolator for constant extrapolation akin to the behavior of
@@ -1325,7 +1545,9 @@ def signal_to_tsfresh_df(
     if num_samples > get_num_samples:
         mid_point = int(num_samples / 2)
         cleaned_signals = cleaned_signals[
-            mid_point - get_num_samples // 2 : mid_point + get_num_samples // 2  # noqa: E203
+            mid_point
+            - get_num_samples // 2 : mid_point  # noqa: E203
+            + get_num_samples // 2
         ]
         num_samples, num_leads = cleaned_signals.shape
 

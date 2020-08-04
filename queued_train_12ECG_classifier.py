@@ -2,23 +2,18 @@ import csv
 import multiprocessing
 import os
 import queue
-import re
+import json
 from glob import glob
 from datetime import datetime, timedelta
 
-import numpy as np
 import wfdb
-import tsfresh
 
 from util.log import configure_logging
 from neurokit2_parallel import (
     ECG_LEAD_NAMES,
     KEYS_INTERVALRELATED,
     KEYS_TSFRESH,
-    get_intervalrelated_features,
-    ecg_clean,
-    best_heartbeats_from_ecg_signal,
-    signal_to_tsfresh_df,
+    wfdb_record_to_feature_dataframe
 )
 
 
@@ -28,7 +23,7 @@ def _get_fieldnames():
         for key in KEYS_INTERVALRELATED:
             field_names.append(f"{lead_name}_{key}")
         for key in KEYS_TSFRESH:
-            hb_key = f"hb_sig__{key}"
+            hb_key = f"hb__{key}"
             field_names.append(f"{lead_name}_{hb_key}")
         for key in KEYS_TSFRESH:
             sig_key = f"sig__{key}"
@@ -49,97 +44,41 @@ def feat_extract_process(
             break
         r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
 
-        age = float("nan")
-        sex = float("nan")
+        record_features, dx = wfdb_record_to_feature_dataframe(r)
 
-        dx = []
-        for comment in r.comments:
-            dx_grp = re.search(r"Dx: (?P<dx>.*)$", comment)
-            if dx_grp:
-                raw_dx = dx_grp.group("dx").split(",")
-                for dxi in raw_dx:
-                    snomed_code = int(dxi)
-                    dx.append(snomed_code)
-                continue
-
-            age_grp = re.search(r"Age: (?P<age>.*)$", comment)
-            if age_grp:
-                age = float(age_grp.group("age"))
-                if not np.isfinite(age):
-                    age = float("nan")
-                continue
-
-            sx_grp = re.search(r"Sex: (?P<sx>.*)$", comment)
-            if sx_grp:
-                if sx_grp.group("sx").upper().startswith("F"):
-                    sex = 1.0
-                elif sx_grp.group("sx").upper().startswith("M"):
-                    sex = 0.0
-                continue
-
-        r.sig_name = ECG_LEAD_NAMES  # force consistent naming
-
-        cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
-
-        # interval related features from parallel neurokit2
-        intervalrelated_features, proc_df = get_intervalrelated_features(
-            r.p_signal, cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
-        )
-
-        # tsfresh related features from heartbeats
-        best_heartbeat_df = best_heartbeats_from_ecg_signal(
-            proc_df, sampling_rate=r.fs, ecg_lead_names=r.sig_name
-        )
-        heartbeat_features = tsfresh.extract_features(
-            best_heartbeat_df,
-            column_id="lead",
-            column_sort="time",
-            n_jobs=1,
-            disable_progressbar=True,
-        )
-
-        # tsfresh related features from signal (offset 1 second, maximum 2500 samples?)
-        signal_df = signal_to_tsfresh_df(
-            cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
-        )
-        full_waveform_features = tsfresh.extract_features(
-            signal_df,
-            column_id="lead",
-            column_sort="time",
-            n_jobs=4,
-            disable_progressbar=True,
-        )
-
-        # flatten and combine three feature vectors into single hashable item
-        ecg_features = {"age": age, "sex": sex}
-        for lead_name in r.sig_name:
-            irf_groupby = intervalrelated_features.groupby("ECG_Sig_Name")
-            irf_group = irf_groupby.get_group(lead_name)
-            for key in KEYS_INTERVALRELATED:
-                ecg_features[f"{lead_name}_{key}"] = irf_group[key][0]
-            for key in KEYS_TSFRESH:
-                hb_key = f"hb_sig__{key}"
-                ecg_features[f"{lead_name}_{hb_key}"] = heartbeat_features.loc[
-                    lead_name
-                ][hb_key]
-            for key in KEYS_TSFRESH:
-                sig_key = f"sig__{key}"
-                ecg_features[f"{lead_name}_{sig_key}"] = full_waveform_features.loc[
-                    lead_name
-                ][sig_key]
-
-        output_queue.put((ecg_features, dx))
+        # turn dataframe record_features into dict flatten out the values (one key to one row)
+        ecg_features = dict((k, v[0]) for (k, v) in record_features.to_dict().items())
+        output_queue.put((header_file_path, ecg_features, dx))
 
 
-def train_12ECG_classifier(input_directory, output_directory):
+def train_12ECG_classifier(input_directory, output_directory, labels_fp="dxs.txt"):
     logger = configure_logging()
+
+    logger.info("Loading feature extraction result...")
+    # check how many files have been processed already, allows feature extraction to be resumable
+    mapped_records = {}
+    if os.path.isfile(labels_fp):
+        with open(labels_fp, mode="r") as labelfile:
+            for line in labelfile.readlines():
+                header_file_path, dxs = json.loads(line)
+                mapped_records[header_file_path] = dxs
+        logger.info(f"Loaded {len(mapped_records)} from prior run.")
+    else:
+        logger.info("No prior feature extraction step performed.")
+        with open(labels_fp, mode="w"):
+            # initialize the file
+            pass
 
     logger.info("Finding input files...")
     header_files = tuple(
-        sorted(glob(os.path.join(input_directory, "**/*.hea"), recursive=True))
+        hfp
+        for hfp in sorted(
+            glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+        )
+        if hfp not in mapped_records
     )
 
-    logger.info("Number of ECG records: %d", len(header_files))
+    logger.info("Number of ECG records to process: %d", len(header_files))
 
     num_cpus = len(os.sched_getaffinity(0))
     logger.info("Number of available CPUs: %d", num_cpus)
@@ -168,11 +107,11 @@ def train_12ECG_classifier(input_directory, output_directory):
     with open("features.csv", "w", newline="\n") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
         writer.writeheader()
-        with open("dxs.txt", "w") as labelfile:
+        with open(labels_fp, "a") as labelfile:
             while True:
                 try:
-                    f_dict, dxs = output_queue.get(True, 0.1)
-                    labelfile.write(f"{dxs}\n")
+                    header_file_path, f_dict, dxs = output_queue.get(True, 0.1)
+                    labelfile.write(json.dumps((header_file_path, dxs)))
                     labelfile.flush()
                     writer.writerow(f_dict)
                     output_queue.task_done()
@@ -204,3 +143,5 @@ def train_12ECG_classifier(input_directory, output_directory):
     output_queue.join_thread()
 
     # print(input_queue.qsize(), output_queue.qsize(), processed_files_counter)
+
+    # TODO: split data, train XGBClassifier, report results

@@ -3,6 +3,7 @@ from glob import glob
 
 import numpy as np
 import pandas as pd
+import joblib
 import tsfresh
 import wfdb
 
@@ -20,7 +21,9 @@ from neurokit2_parallel import (
     ecg_intervalrelated,
     get_intervalrelated_features,
     best_heartbeats_from_ecg_signal,
-    signal_to_tsfresh_df
+    signal_to_tsfresh_df,
+    lead_to_feature_dataframe,
+    parse_comments,
 )
 
 
@@ -377,9 +380,7 @@ class TestNeurokit2Parallel(unittest.TestCase):
             lead_signals = signal_to_tsfresh_df(
                 cleaned_signals, sampling_rate=r.fs, ecg_lead_names=r.sig_name
             )
-            self.assertTrue(
-                (lead_signals.columns == ["lead", "time", "sig"]).all()
-            )
+            self.assertTrue((lead_signals.columns == ["lead", "time", "sig"]).all())
 
             hb_feats = tsfresh.extract_features(
                 lead_signals,
@@ -392,3 +393,29 @@ class TestNeurokit2Parallel(unittest.TestCase):
             self.assertTrue(
                 [k.split("sig__")[1] for k in hb_feats.columns] == KEYS_TSFRESH
             )
+
+    def test_lead_to_feature_dataframe(self):
+        for mat_record_fp in [
+            "tests/data/E00793.mat",
+            "tests/data/Q2428.mat",  # test leads with no detected R-peaks
+        ]:
+            r = wfdb.rdrecord(mat_record_fp.rsplit(".mat")[0])
+
+            age, sex, dx = parse_comments(r)
+            r.sig_name = ECG_LEAD_NAMES  # force consistent naming
+            cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
+
+            signal_length, num_leads = cleaned_signals.shape
+
+            # each lead should be processed separately and then combined back together
+            record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
+                joblib.delayed(lead_to_feature_dataframe)(
+                    r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs
+                )
+                for i in range(num_leads)
+            )
+            record_features = pd.concat([
+                pd.DataFrame({"age": (age,), "sex": (sex,)})
+            ] + record_features, axis=1)
+
+            self.assertEqual(record_features.shape, (1, 18950))
