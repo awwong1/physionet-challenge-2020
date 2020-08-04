@@ -3,6 +3,7 @@
 # but vectorized to support multi-lead ECGs without loops.
 import re
 import functools
+import warnings
 
 import neurokit2 as nk
 import numpy as np
@@ -11,6 +12,7 @@ import scipy
 import scipy.signal
 import tsfresh
 import joblib
+
 
 ECG_LEAD_NAMES = (
     "I",
@@ -905,9 +907,11 @@ def lead_to_feature_dataframe(raw_signal, cleaned_signal, lead_name, sampling_ra
 
     # Heart Rate Variability Features
     try:
-        hrv_df, signals_df, rpeaks_info = _lead_to_interval_related_dataframe(
-            signals_df, sampling_rate
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            hrv_df, signals_df, rpeaks_info = _lead_to_interval_related_dataframe(
+                signals_df, sampling_rate
+            )
     except Exception:
         hrv_df = pd.DataFrame.from_dict(
             dict((k, (np.nan,)) for k in KEYS_INTERVALRELATED)
