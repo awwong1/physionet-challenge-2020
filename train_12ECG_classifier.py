@@ -79,7 +79,8 @@ def train_12ECG_classifier(
     features_fp="features.csv",
     weights_file="evaluation-2020/weights.csv",
     early_stopping_rounds=20,
-    experiments_to_run=1,
+    experiments_to_run=1,  # 100 for paper
+    evaluation_size=0.0,  # 0.15 for paper
 ):
     logger = configure_logging()
 
@@ -267,10 +268,21 @@ def train_12ECG_classifier(
         with ElapsedTimer() as timer:
             logger.info(f"Running experiment #{experiment_num}")
 
-            logger.info("Splitting data into training and evaluation split")
-            train_features, eval_features, train_labels, eval_labels = train_test_split(
-                features_df, labels, test_size=0.15
+            logger.info(
+                f"Splitting data into training and evaluation split ({evaluation_size})"
             )
+            if evaluation_size > 0:
+                (
+                    train_features,
+                    eval_features,
+                    train_labels,
+                    eval_labels,
+                ) = train_test_split(features_df, labels, test_size=evaluation_size)
+            else:
+                train_features = features_df
+                train_labels = labels
+                eval_features = pd.DataFrame({})
+                eval_labels = []
 
             logger.info(f"Training dataset shape: {train_features.shape}")
             logger.info(f"Evaluation dataset shape: {eval_features.shape}")
@@ -298,7 +310,11 @@ def train_12ECG_classifier(
 
                 to_save_data[sc] = model
 
-            _display_metrics(logger, eval_features, eval_labels, to_save_data)
+            if eval_labels:
+                _display_metrics(logger, eval_features, eval_labels, to_save_data)
+            else:
+                logger.info("Metrics calculated on training data, no evaluation set!")
+                _display_metrics(logger, train_features, train_labels, to_save_data)
             _save_experiment(logger, output_directory, to_save_data)
 
         logger.info(f"Experiment {experiment_num} took {timer.duration:.2f} seconds")
@@ -341,9 +357,10 @@ def _train_label_classifier(
         train_labels, scored_codes, label_weights
     )
 
-    eval_labels, eval_weights = _determine_sample_weights(
-        eval_labels, scored_codes, label_weights
-    )
+    if eval_labels:
+        eval_labels, eval_weights = _determine_sample_weights(
+            eval_labels, scored_codes, label_weights
+        )
 
     # try negative over positive https://machinelearningmastery.com/xgboost-for-imbalanced-classification/
     pos_count = len([e for e in train_labels if e])
@@ -358,12 +375,22 @@ def _train_label_classifier(
         scale_pos_weight=scale_pos_weight,
     )
 
+    eval_set = [
+        (train_features, train_labels),
+    ]
+    sample_weight_eval_set = [
+        train_weights,
+    ]
+    if eval_labels:
+        eval_set.append((eval_features, eval_labels))
+        sample_weight_eval_set.append(eval_weights)
+
     model = model.fit(
         train_features,
         train_labels,
         sample_weight=train_weights,
-        eval_set=[(train_features, train_labels), (eval_features, eval_labels)],
-        sample_weight_eval_set=[train_weights, eval_weights],
+        eval_set=eval_set,
+        sample_weight_eval_set=sample_weight_eval_set,
         early_stopping_rounds=early_stopping_rounds,
         verbose=False,
     )
