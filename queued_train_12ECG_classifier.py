@@ -1,20 +1,29 @@
 import csv
+import json
 import multiprocessing
 import os
 import queue
-import json
-from glob import glob
 from datetime import datetime, timedelta
+from glob import glob
+from time import time
 
+import joblib
+import numpy as np
+import pandas as pd
 import wfdb
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
 
-from util.log import configure_logging
 from neurokit2_parallel import (
     ECG_LEAD_NAMES,
     KEYS_INTERVALRELATED,
     KEYS_TSFRESH,
     wfdb_record_to_feature_dataframe,
 )
+from util.log import configure_logging
+from util.evaluate_12ECG_score import load_table, is_number
+from util.evaluation_helper import evaluate_score_batch
+from util.elapsed_timer import ElapsedTimer
 
 
 def _get_fieldnames():
@@ -52,7 +61,13 @@ def feat_extract_process(
 
 
 def train_12ECG_classifier(
-    input_directory, output_directory, labels_fp="dxs.txt", features_fp="features.csv"
+    input_directory,
+    output_directory,
+    labels_fp="dxs.txt",
+    features_fp="features.csv",
+    weights_file="evaluation-2020/weights.csv",
+    early_stopping_rounds=20,
+    experiments_to_run=1,
 ):
     logger = configure_logging()
 
@@ -72,7 +87,7 @@ def train_12ECG_classifier(
             pass
 
     logger.info("Finding input files...")
-    header_files = tuple(
+    process_header_files = tuple(
         hfp
         for hfp in sorted(
             glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
@@ -80,14 +95,14 @@ def train_12ECG_classifier(
         if hfp not in mapped_records
     )
 
-    logger.info("Number of ECG records to process: %d", len(header_files))
+    logger.info("Number of ECG records to process: %d", len(process_header_files))
 
     num_cpus = len(os.sched_getaffinity(0))
     logger.info("Number of available CPUs: %d", num_cpus)
 
     # Setup & populate input queue, then initialize output queue
     input_queue = multiprocessing.JoinableQueue()
-    for header_file in header_files:
+    for header_file in process_header_files:
         input_queue.put_nowait(header_file)
     output_queue = multiprocessing.JoinableQueue()
 
@@ -106,15 +121,16 @@ def train_12ECG_classifier(
     processed_files_counter = 0
     out_start = datetime.now()
     out_log = None
+    fieldnames = _get_fieldnames()
 
     # initialize the header if the file does not exist
     if not os.path.isfile(features_fp):
         with open(features_fp, "w", newline="\n") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
     with open(features_fp, "a", newline="\n") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=_get_fieldnames())
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         with open(labels_fp, "a") as labelfile:
             while True:
                 try:
@@ -137,12 +153,15 @@ def train_12ECG_classifier(
                         if p in killed_extractor_procs:
                             continue
                         if not p.is_alive():
-                            logger.info(f"{p.pid} (exitcode: {p.exitcode}) is not alive, but queue still contains tasks!")
+                            logger.info(
+                                f"{p.pid} (exitcode: {p.exitcode}) is not alive, but queue still contains tasks!"
+                            )
                             logger.info("Joining and starting new process...")
                             p.join()
                             killed_extractor_procs.append(p)
                             p_new = multiprocessing.Process(
-                                target=feat_extract_process, args=(input_queue, output_queue)
+                                target=feat_extract_process,
+                                args=(input_queue, output_queue),
                             )
                             p_new.start()
                             feature_extractor_procs.append(p_new)
@@ -155,7 +174,7 @@ def train_12ECG_classifier(
                         if processed_files_counter > 0:
                             avg_hours = (
                                 (
-                                    len(header_files)
+                                    len(process_header_files)
                                     * (
                                         start_delta.total_seconds()
                                         / processed_files_counter
@@ -168,14 +187,14 @@ def train_12ECG_classifier(
                             avg_hours = float("nan")
 
                         logger.info(
-                            f"Processed {processed_files_counter}/{len(header_files)} in {start_delta} (est {avg_hours} hr)"
+                            f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {avg_hours} hr)"
                         )
                         out_log = out_cur
 
     out_cur = datetime.now()
     start_delta = out_cur - out_start
     logger.info(
-        f"Finished processing {processed_files_counter}/{len(header_files)} in {start_delta}"
+        f"Finished processing {processed_files_counter}/{len(process_header_files)} in {start_delta}"
     )
 
     # Close the queues
@@ -186,4 +205,200 @@ def train_12ECG_classifier(
 
     # print(input_queue.qsize(), output_queue.qsize(), processed_files_counter)
 
-    # TODO: split data, train XGBClassifier, report results
+    # load the data
+    logger.info(f"Loading record label mapping from '{labels_fp}'")
+    mapped_records = {}
+    with open(labels_fp, mode="r", newline="\n") as labelfile:
+        for line in labelfile.readlines():
+            header_file_path, dxs = json.loads(line)
+            mapped_records[header_file_path] = dxs
+
+    logger.info(f"Loading features_df from '{features_fp}'")
+    features_df = pd.read_csv(
+        features_fp, header=0, names=fieldnames, index_col="header_file", nrows=20
+    )
+    logger.info("Constructing labels array...")
+    labels = [mapped_records[row[0]] for row in features_df.itertuples()]
+
+    # logger.info("Dropping 'header_file' column from features_df")
+    # features_df.reset_index(drop=True, inplace=True) # is necessary?
+
+    # Load the SNOMED CT code mapping table
+    with open("data/snomed_ct_dx_map.json", "r") as f:
+        SNOMED_CODE_MAP = json.load(f)
+
+    logger.info("Loading scoring function weights")
+    rows, cols, all_weights = load_table(weights_file)
+    assert rows == cols, "rows and cols mismatch"
+    scored_codes = rows
+
+    for experiment_num in range(experiments_to_run):
+        with ElapsedTimer() as timer:
+            logger.info(f"Running experiment #{experiment_num}")
+
+            logger.info("Splitting data into training and evaluation split")
+            train_features, eval_features, train_labels, eval_labels = train_test_split(
+                features_df, labels, test_size=0.15
+            )
+
+            logger.info(f"Training dataset shape: {train_features.shape}")
+            logger.info(f"Evaluation dataset shape: {eval_features.shape}")
+
+            to_save_data = {
+                "train_records": train_features.index.to_list(),
+                "eval_records": eval_features.index.to_list(),
+            }
+
+            for idx_sc, sc in enumerate(scored_codes):
+                _abbrv, dx = SNOMED_CODE_MAP[str(sc)]
+                logger.info(f"Training classifier for {dx} (code {sc})...")
+
+                sc, model = _train_label_classifier(
+                    sc,
+                    idx_sc,
+                    all_weights,
+                    train_features,
+                    train_labels,
+                    eval_features,
+                    eval_labels,
+                    scored_codes,
+                    early_stopping_rounds,
+                )
+
+                to_save_data[sc] = model
+
+            _display_metrics(logger, eval_features, eval_labels, to_save_data)
+            _save_experiment(logger, output_directory, to_save_data)
+
+        logger.info(f"Experiment {experiment_num} took {timer.duration:.2f} seconds")
+
+
+def _train_label_classifier(
+    sc,
+    idx_sc,
+    all_weights,
+    train_features,
+    train_labels,
+    eval_features,
+    eval_labels,
+    scored_codes,
+    early_stopping_rounds,
+):
+    label_weights = all_weights[idx_sc]
+    train_labels, train_weights = _determine_sample_weights(
+        train_labels, scored_codes, label_weights
+    )
+
+    eval_labels, eval_weights = _determine_sample_weights(
+        eval_labels, scored_codes, label_weights
+    )
+
+    # try negative over positive https://machinelearningmastery.com/xgboost-for-imbalanced-classification/
+    pos_count = len([e for e in train_labels if e])
+    pos_count = max(pos_count, 1)
+    scale_pos_weight = (len(train_labels) - pos_count) / pos_count
+
+    model = XGBClassifier(
+        booster="gbtree",  # gbtree, dart or gblinear
+        verbosity=0,
+        # tree_method="gpu_hist",
+        sampling_method="gradient_based",
+        scale_pos_weight=scale_pos_weight,
+    )
+
+    model = model.fit(
+        train_features,
+        train_labels,
+        sample_weight=train_weights,
+        eval_set=[(train_features, train_labels), (eval_features, eval_labels)],
+        sample_weight_eval_set=[train_weights, eval_weights],
+        early_stopping_rounds=early_stopping_rounds,
+        verbose=False,
+    )
+
+    return sc, model
+
+
+def _determine_sample_weights(
+    data_set, scored_codes, label_weights, weight_threshold=0.5
+):
+    """Using the scoring labels weights to increase the dataset size of positive labels
+    """
+    data_labels = []
+    sample_weights = []
+    for dt in data_set:
+        sample_weight = None
+        for dx in dt:
+            if str(dx) in scored_codes:
+                _sample_weight = label_weights[scored_codes.index(str(dx))]
+                if _sample_weight < weight_threshold:
+                    continue
+                if sample_weight is None or _sample_weight > sample_weight:
+                    sample_weight = _sample_weight
+
+        if sample_weight is None:
+            # not a scored label, treat as a negative example (weight of 1)
+            sample_weight = 1.0
+            data_labels.append(False)
+        else:
+            data_labels.append(True)
+        sample_weights.append(sample_weight)
+    return data_labels, sample_weights
+
+
+def _display_metrics(logger, features_df, ground_truth, to_save_data):
+    classes = []
+    labels = []
+    scores = []
+
+    for k, v in to_save_data.items():
+        if not is_number(k):
+            continue
+
+        classes.append(str(k))
+        labels.append(v.predict(features_df).tolist())
+        scores.append(v.predict_proba(features_df)[:, 1].tolist())
+
+    labels = np.array(labels).T
+    scores = np.array(scores).T
+
+    (
+        auroc,
+        auprc,
+        accuracy,
+        f_measure,
+        f_beta_measure,
+        g_beta_measure,
+        challenge_metric,
+    ) = evaluate_score_batch(
+        predicted_classes=classes,
+        predicted_labels=labels,
+        predicted_probabilities=scores,
+        raw_ground_truth_labels=ground_truth,
+    )
+
+    logger.info(
+        "AUROC | AUPRC | Accuracy | F-measure | Fbeta-measure | Gbeta-measure | Challenge metric"
+    )
+    logger.info(
+        f"{auroc:>5.3f} | {auprc:>5.3f} | {accuracy:>8.3f} | {f_measure:>9.3f} |"
+        f" {f_beta_measure:>13.3f} | {g_beta_measure:>13.3f} | {challenge_metric:>16.3f}"
+    )
+
+    to_save_data["auroc"] = auroc
+    to_save_data["auprc"] = auprc
+    to_save_data["accuracy"] = accuracy
+    to_save_data["f_measure"] = f_measure
+    to_save_data["f_beta_measure"] = f_beta_measure
+    to_save_data["g_beta_measure"] = g_beta_measure
+    to_save_data["challenge_metric"] = challenge_metric
+
+
+def _save_experiment(logger, output_directory, to_save_data):
+    logger.info("Saving model...")
+
+    cur_sec = int(time())
+    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
+    joblib.dump(to_save_data, filename, protocol=0)
+
+    logger(f"Saved to {filename}")
