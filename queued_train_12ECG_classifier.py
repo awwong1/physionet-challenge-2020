@@ -10,13 +10,19 @@ from time import time
 import joblib
 import numpy as np
 import pandas as pd
+
 # import wfdb
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 from xgboost import XGBClassifier
 
 from driver import load_challenge_data
-from neurokit2_parallel import (ECG_LEAD_NAMES, KEYS_INTERVALRELATED,
-                                KEYS_TSFRESH, wfdb_record_to_feature_dataframe)
+from neurokit2_parallel import (
+    ECG_LEAD_NAMES,
+    KEYS_INTERVALRELATED,
+    KEYS_TSFRESH,
+    wfdb_record_to_feature_dataframe,
+)
 from util.elapsed_timer import ElapsedTimer
 from util.evaluate_12ECG_score import is_number, load_table
 from util.evaluation_helper import evaluate_score_batch
@@ -77,31 +83,50 @@ def train_12ECG_classifier(
 ):
     logger = configure_logging()
 
-    logger.info("Loading feature extraction result...")
+    labels_fp = os.path.join(output_directory, labels_fp)
+    features_fp = os.path.join(output_directory, features_fp)
+    fieldnames = _get_fieldnames()
+
+    logger.info(f"Loading feature extraction result from '{labels_fp}'...")
     # check how many files have been processed already, allows feature extraction to be resumable
-    mapped_records = {}
+    label_mapped_records = []
     if os.path.isfile(labels_fp):
         with open(labels_fp, mode="r", newline="\n") as labelfile:
             for line in labelfile.readlines():
-                header_file_path, dxs = json.loads(line)
-                mapped_records[header_file_path] = dxs
-        logger.info(f"Loaded {len(mapped_records)} from prior run.")
+                header_file_path, _ = json.loads(line)
+                label_mapped_records.append(header_file_path)
+        logger.info(f"Loaded {len(label_mapped_records)} from prior run.")
     else:
-        logger.info("No prior feature extraction step performed.")
+        logger.info("No labels file found.")
         with open(labels_fp, mode="w"):
             # initialize the file
             pass
 
-    logger.info("Finding input files...")
+    logger.info(f"Loading feature extraction result from '{features_fp}'...")
+    feature_mapped_records = []
+    if os.path.isfile(features_fp):
+        with open(features_fp, "r", newline="\n") as csvfile:
+            reader = csv.DictReader(csvfile, fieldnames=fieldnames)
+            next(reader)  # ignore header
+            with tqdm(reader) as t:
+                for row in t:
+                    feature_mapped_records.append(row["header_file"])
+    else:
+        logger.info("No features file found.")
+
+    logger.info(f"Discovering ECG input files in '{input_directory}'...")
     process_header_files = tuple(
         hfp
-        for hfp in sorted(
-            glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
-        )
-        if hfp not in mapped_records
+        for hfp in glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+        if hfp not in label_mapped_records or hfp not in feature_mapped_records
     )
 
-    logger.info("Number of ECG records to process: %d", len(process_header_files))
+    del label_mapped_records
+    del feature_mapped_records
+
+    logger.info(
+        "Number of ECG records remain to process: %d", len(process_header_files)
+    )
 
     num_cpus = len(os.sched_getaffinity(0))
     logger.info("Number of available CPUs: %d", num_cpus)
@@ -127,7 +152,6 @@ def train_12ECG_classifier(
     processed_files_counter = 0
     out_start = datetime.now()
     out_log = None
-    fieldnames = _get_fieldnames()
     avg_records_per_sec = 0
 
     # initialize the header if the file does not exist
