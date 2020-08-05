@@ -362,6 +362,12 @@ def _display_metrics(logger, features_df, ground_truth, to_save_data):
     labels = np.array(labels).T
     scores = np.array(scores).T
 
+    raw_ground_truth_labels = []
+    for dx in ground_truth:
+        raw_ground_truth_labels.append([
+            str(dv) for dv in dx
+        ])
+
     (
         auroc,
         auprc,
@@ -374,7 +380,7 @@ def _display_metrics(logger, features_df, ground_truth, to_save_data):
         predicted_classes=classes,
         predicted_labels=labels,
         predicted_probabilities=scores,
-        raw_ground_truth_labels=ground_truth,
+        raw_ground_truth_labels=raw_ground_truth_labels,
     )
 
     logger.info(
