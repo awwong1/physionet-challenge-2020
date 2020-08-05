@@ -182,26 +182,28 @@ def train_12ECG_classifier(
                         # input queue is empty and all children processes have exited
                         break
 
-                    num_feature_extractor_procs = len(feature_extractor_procs)
-                    for fe_proc_idx in range(num_feature_extractor_procs):
-                        p = feature_extractor_procs[fe_proc_idx]
-                        if p in killed_extractor_procs:
-                            continue
-                        if not p.is_alive():
-                            disp_str = (
-                                f"{p.pid} (exitcode: {p.exitcode}) is not alive "
-                                f"while input queue contains {input_queue.qsize()} tasks! "
-                                "Restarting..."
-                            )
-                            logger.info(disp_str)
-                            p.join()
-                            killed_extractor_procs.append(p)
-                            p_new = multiprocessing.Process(
-                                target=feat_extract_process,
-                                args=(input_queue, output_queue),
-                            )
-                            p_new.start()
-                            feature_extractor_procs.append(p_new)
+                    elif not input_queue.empty():
+                        # input queue is not empty, restart stopped workers
+                        num_feature_extractor_procs = len(feature_extractor_procs)
+                        for fe_proc_idx in range(num_feature_extractor_procs):
+                            p = feature_extractor_procs[fe_proc_idx]
+                            if p in killed_extractor_procs:
+                                continue
+                            if not p.is_alive():
+                                disp_str = (
+                                    f"{p.pid} (exitcode: {p.exitcode}) is not alive "
+                                    f"while input queue contains {input_queue.qsize()} tasks! "
+                                    "Restarting..."
+                                )
+                                logger.info(disp_str)
+                                p.join()
+                                killed_extractor_procs.append(p)
+                                p_new = multiprocessing.Process(
+                                    target=feat_extract_process,
+                                    args=(input_queue, output_queue),
+                                )
+                                p_new.start()
+                                feature_extractor_procs.append(p_new)
 
                 finally:
                     out_cur = datetime.now()
