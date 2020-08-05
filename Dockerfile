@@ -1,14 +1,15 @@
-FROM python:3.7.3-slim
+FROM python:3.7.3-stretch
 
 ## The MAINTAINER instruction sets the Author field of the generated images
-MAINTAINER author@sample.com
+MAINTAINER alex.wong@ualberta.ca
 ## DO NOT EDIT THESE 3 lines
 RUN mkdir /physionet
 COPY ./ /physionet
 WORKDIR /physionet
 
-## Install your dependencies here using apt-get etc.
-
-## Do not edit if you have a requirements.txt
+# Pull the required remote repos
+RUN git submodule update --init --recursive
+# Install python requirements
 RUN pip install -r requirements.txt
-
+# Install updated NeuroKit2 library
+RUN pip install --upgrade ./NeuroKit

@@ -10,7 +10,7 @@ Team name: **CVC**
     - University of Alberta
 - Weijie Sun <[weijie2@ualberta.ca](mailto:weijie2@ualberta.ca)>
     - Canadian Vigour Centre
-- Sunil Kalmady Vasu <[kalmady@ualberta.ca](mailto:kalmady@ualberta.ca)>
+- Sunil Vasu Kalmady <[kalmady@ualberta.ca](mailto:kalmady@ualberta.ca)>
     - Canadian Vigour Centre
 - Padma Kaul <[pkaul@ualberta.ca](mailto:pkaul@ualberta.ca)>
     - Canadian Vigour Centre
