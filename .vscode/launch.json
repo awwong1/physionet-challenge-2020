@@ -21,9 +21,9 @@
             "request": "launch",
             "program": "${workspaceFolder}/driver.py",
             "args": [
-                "tests/model",
+                "model",
                 "tests/data",
-                "tests/output"
+                "out"
             ],
             "console": "integratedTerminal"
         },

@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 import os, sys
-# from train_12ECG_classifier import train_12ECG_classifier
-from queued_train_12ECG_classifier import train_12ECG_classifier
+from train_12ECG_classifier import train_12ECG_classifier
 
 if __name__ == '__main__':
     # Parse arguments.

@@ -3,14 +3,15 @@ import os
 
 import joblib
 
-from feature_extractor import data_header_to_np_array, structured_np_array_to_features
 from util.evaluate_12ECG_score import is_number
+from util.raw_to_wfdb import convert_to_wfdb_record
+from neurokit2_parallel import wfdb_record_to_feature_dataframe
 
 
 def run_12ECG_classifier(data, header_data, loaded_model):
     # Use your classifier here to obtain a label and score for each class.
-    np_array = data_header_to_np_array(data, header_data)
-    features = structured_np_array_to_features(np_array)
+    r = convert_to_wfdb_record(data, header_data)
+    record_features, dx = wfdb_record_to_feature_dataframe(r)
 
     classes = []
     labels = []
@@ -19,8 +20,8 @@ def run_12ECG_classifier(data, header_data, loaded_model):
         if not is_number(k):
             continue
         classes.append(str(k))
-        labels.append(int(v.predict(features)[0]))
-        scores.append(v.predict_proba(features)[0][1])
+        labels.append(int(v.predict(record_features)[0]))
+        scores.append(v.predict_proba(record_features)[0][1])
 
     # return current_label, current_score, classes
     return labels, scores, classes

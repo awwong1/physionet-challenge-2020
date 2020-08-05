@@ -1,116 +1,354 @@
-#!/usr/bin/env python
-
+import csv
 import json
+import multiprocessing
 import os
-import time
+import queue
+from datetime import datetime, timedelta
 from glob import glob
+from time import time
 
 import joblib
 import numpy as np
-from scipy.io import loadmat
+import pandas as pd
+
+# import wfdb
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 from xgboost import XGBClassifier
 
-from feature_extractor import hea_fp_to_np_array, structured_np_array_to_features
-from util.evaluate_12ECG_score import load_table
-from util.evaluation_helper import train_evaluate_score_batch_helper
+from driver import load_challenge_data
+from neurokit2_parallel import (
+    ECG_LEAD_NAMES,
+    KEYS_INTERVALRELATED,
+    KEYS_TSFRESH,
+    wfdb_record_to_feature_dataframe,
+)
 from util.elapsed_timer import ElapsedTimer
+from util.evaluate_12ECG_score import is_number, load_table
+from util.evaluation_helper import evaluate_score_batch
+from util.log import configure_logging
+from util.raw_to_wfdb import convert_to_wfdb_record
+
+
+def _get_fieldnames():
+    field_names = ["header_file", "age", "sex"]
+    for lead_name in ECG_LEAD_NAMES:
+        for key in KEYS_INTERVALRELATED:
+            field_names.append(f"{lead_name}_{key}")
+        for key in KEYS_TSFRESH:
+            hb_key = f"hb__{key}"
+            field_names.append(f"{lead_name}_{hb_key}")
+        for key in KEYS_TSFRESH:
+            sig_key = f"sig__{key}"
+            field_names.append(f"{lead_name}_{sig_key}")
+    return field_names
+
+
+def feat_extract_process(
+    input_queue: multiprocessing.JoinableQueue,
+    output_queue: multiprocessing.JoinableQueue,
+):
+    while True:
+        try:
+            header_file_path = input_queue.get(True, 1)
+            input_queue.task_done()
+        except queue.Empty:
+            # When the input queue is empty, worker process terminates
+            # NOTE: queue.Empty may be raised even in input_queue contains values
+            # parent process should respawn new workers in this edge case
+            break
+
+        # for some reason, OS FileError (Too many files) is raised...
+        # r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
+
+        mat_fp = header_file_path.replace(".hea", ".mat")
+        data, header_data = load_challenge_data(mat_fp)
+        r = convert_to_wfdb_record(data, header_data)
+
+        record_features, dx = wfdb_record_to_feature_dataframe(r)
+
+        # turn dataframe record_features into dict flatten out the values (one key to one row)
+        ecg_features = dict((k, v[0]) for (k, v) in record_features.to_dict().items())
+        output_queue.put((header_file_path, ecg_features, dx))
 
 
 def train_12ECG_classifier(
     input_directory,
     output_directory,
-    data_cache_fp=".data_cache.sav",
+    labels_fp="dxs.txt",
+    features_fp="features.csv",
+    weights_file="evaluation-2020/weights.csv",
     early_stopping_rounds=20,
-    test_size=0.2,
-    weights_file="weights.csv",
-    experiments_to_run=100,
+    experiments_to_run=1,
 ):
-    print("Loading data...")
-    header_files = tuple(
-        glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+    logger = configure_logging()
+
+    labels_fp = os.path.join(output_directory, labels_fp)
+    features_fp = os.path.join(output_directory, features_fp)
+    fieldnames = _get_fieldnames()
+
+    logger.info(f"Loading feature extraction result from '{labels_fp}'...")
+    # check how many files have been processed already, allows feature extraction to be resumable
+    label_mapped_records = []
+    if os.path.isfile(labels_fp):
+        with open(labels_fp, mode="r", newline="\n") as labelfile:
+            for line in labelfile.readlines():
+                header_file_path, _ = json.loads(line)
+                label_mapped_records.append(header_file_path)
+        logger.info(f"Loaded {len(label_mapped_records)} from prior run.")
+    else:
+        logger.info("No labels file found.")
+        with open(labels_fp, mode="w"):
+            # initialize the file
+            pass
+
+    logger.info(f"Loading feature extraction result from '{features_fp}'...")
+    feature_mapped_records = []
+    if os.path.isfile(features_fp):
+        with open(features_fp, "r", newline="\n") as csvfile:
+            reader = csv.DictReader(csvfile, fieldnames=fieldnames)
+            next(reader)  # ignore header
+            with tqdm(reader) as t:
+                for row in t:
+                    feature_mapped_records.append(row["header_file"])
+    else:
+        logger.info("No features file found.")
+
+    logger.info(f"Discovering ECG input files in '{input_directory}'...")
+    process_header_files = tuple(
+        hfp
+        for hfp in glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+        if hfp not in label_mapped_records or hfp not in feature_mapped_records
     )
 
-    print(f"Number of files: {len(header_files)}")
-    data_cache = _generate_data_cache(data_cache_fp, header_files)
+    del label_mapped_records
+    del feature_mapped_records
+
+    logger.info(
+        "Number of ECG records remain to process: %d", len(process_header_files)
+    )
+
+    num_cpus = len(os.sched_getaffinity(0))
+    logger.info("Number of available CPUs: %d", num_cpus)
+
+    # Setup & populate input queue, then initialize output queue
+    input_queue = multiprocessing.JoinableQueue()
+    for header_file in process_header_files:
+        input_queue.put_nowait(header_file)
+    output_queue = multiprocessing.JoinableQueue()
+
+    # all CPUs used for feature extraction
+    num_feature_extractor_procs = max(num_cpus, 1)
+    feature_extractor_procs = []
+    killed_extractor_procs = []
+    for _ in range(num_feature_extractor_procs):
+        p = multiprocessing.Process(
+            target=feat_extract_process, args=(input_queue, output_queue)
+        )
+        p.start()
+        feature_extractor_procs.append(p)
+
+    # main process used for concatenating features
+    processed_files_counter = 0
+    out_start = datetime.now()
+    out_log = None
+    avg_records_per_sec = 0
+
+    # initialize the header if the file does not exist
+    if not os.path.isfile(features_fp):
+        with open(features_fp, "w", newline="\n") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+
+    with open(features_fp, "a", newline="\n") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        with open(labels_fp, "a") as labelfile:
+            while True:
+                try:
+                    header_file_path, f_dict, dxs = output_queue.get(True, 0.1)
+                    labelfile.write(json.dumps((header_file_path, dxs)) + "\n")
+                    labelfile.flush()
+                    f_dict["header_file"] = header_file_path
+                    writer.writerow(f_dict)
+                    output_queue.task_done()
+                    processed_files_counter += 1
+                except queue.Empty:
+                    # When the output queue is empty and all workers are terminated
+                    # all files have been processed
+
+                    if input_queue.empty() and all(
+                        not p.is_alive() for p in feature_extractor_procs
+                    ):
+                        # input queue is empty and all children processes have exited
+                        break
+
+                    elif not input_queue.empty():
+                        # input queue is not empty, restart stopped workers
+                        num_feature_extractor_procs = len(feature_extractor_procs)
+                        for fe_proc_idx in range(num_feature_extractor_procs):
+                            p = feature_extractor_procs[fe_proc_idx]
+                            if p in killed_extractor_procs:
+                                continue
+                            if not p.is_alive():
+                                disp_str = (
+                                    f"{p.pid} (exitcode: {p.exitcode}) is not alive "
+                                    f"while input queue contains {input_queue.qsize()} tasks! "
+                                    "Restarting..."
+                                )
+                                logger.info(disp_str)
+                                p.join()
+                                killed_extractor_procs.append(p)
+                                p_new = multiprocessing.Process(
+                                    target=feat_extract_process,
+                                    args=(input_queue, output_queue),
+                                )
+                                p_new.start()
+                                feature_extractor_procs.append(p_new)
+
+                finally:
+                    out_cur = datetime.now()
+                    if out_log is None or out_cur - out_log > timedelta(seconds=5):
+                        start_delta = out_cur - out_start
+
+                        remaining_time, avg_records_per_sec = _eta_calculate(
+                            start_delta,
+                            processed_files_counter,
+                            len(process_header_files),
+                            avg_records_per_sec,
+                        )
+
+                        logger.info(
+                            f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {remaining_time} remain)"
+                        )
+                        out_log = out_cur
+
+    out_cur = datetime.now()
+    start_delta = out_cur - out_start
+    logger.info(
+        f"Finished processing {processed_files_counter}/{len(process_header_files)} in {start_delta}"
+    )
+
+    # Close the queues
+    input_queue.close()
+    input_queue.join_thread()
+    output_queue.close()
+    output_queue.join_thread()
+
+    # print(input_queue.qsize(), output_queue.qsize(), processed_files_counter)
+
+    # load the data
+    logger.info(f"Loading record label mapping from '{labels_fp}'")
+    mapped_records = {}
+    with open(labels_fp, mode="r", newline="\n") as labelfile:
+        for line in labelfile.readlines():
+            header_file_path, dxs = json.loads(line)
+            mapped_records[header_file_path] = dxs
+
+    logger.info(f"Loading features_df from '{features_fp}'")
+    features_df = pd.read_csv(
+        features_fp, header=0, names=fieldnames, index_col="header_file"
+    )
+    logger.info("Constructing labels array...")
+    labels = [mapped_records[row[0]] for row in features_df.itertuples()]
+
+    # logger.info("Dropping 'header_file' column from features_df")
+    # features_df.reset_index(drop=True, inplace=True) # is necessary?
 
     # Load the SNOMED CT code mapping table
     with open("data/snomed_ct_dx_map.json", "r") as f:
         SNOMED_CODE_MAP = json.load(f)
 
-    print("Loading weights...")
-
+    logger.info("Loading scoring function weights")
     rows, cols, all_weights = load_table(weights_file)
     assert rows == cols, "rows and cols mismatch"
-
     scored_codes = rows
 
-    print("Training models...")
-
-    for experiment_id in range(experiments_to_run):
+    for experiment_num in range(experiments_to_run):
         with ElapsedTimer() as timer:
-            print(f"Experiment {experiment_id} start")
+            logger.info(f"Running experiment #{experiment_num}")
 
-            # Split the data into train and evaluation sets
-            data_train, data_eval = train_test_split(data_cache, test_size=test_size)
+            logger.info("Splitting data into training and evaluation split")
+            train_features, eval_features, train_labels, eval_labels = train_test_split(
+                features_df, labels, test_size=0.15
+            )
 
-            # trainers throw an error when structured arrays passed, convert to unstructured
-            raw_data_train = structured_np_array_to_features(data_train)
-            raw_data_eval = structured_np_array_to_features(data_eval)
+            logger.info(f"Training dataset shape: {train_features.shape}")
+            logger.info(f"Evaluation dataset shape: {eval_features.shape}")
 
-            # also store the split for analysis
             to_save_data = {
-                "train_records": data_train["record_name"].tolist(),
-                "eval_records": data_eval["record_name"].tolist(),
+                "train_records": train_features.index.to_list(),
+                "eval_records": eval_features.index.to_list(),
             }
 
             for idx_sc, sc in enumerate(scored_codes):
                 _abbrv, dx = SNOMED_CODE_MAP[str(sc)]
-                print(f"Training classifier for {dx} (code {sc})...")
+                logger.info(f"Training classifier for {dx} (code {sc})...")
 
                 sc, model = _train_label_classifier(
                     sc,
                     idx_sc,
                     all_weights,
-                    data_train,
-                    raw_data_train,
-                    data_eval,
-                    raw_data_eval,
+                    train_features,
+                    train_labels,
+                    eval_features,
+                    eval_labels,
                     scored_codes,
                     early_stopping_rounds,
                 )
 
                 to_save_data[sc] = model
 
-            _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data)
-            _save_experiment(output_directory, to_save_data)
-        print(f"Experiment {experiment_id} took {timer.duration:.2f} seconds")
+            _display_metrics(logger, eval_features, eval_labels, to_save_data)
+            _save_experiment(logger, output_directory, to_save_data)
+
+        logger.info(f"Experiment {experiment_num} took {timer.duration:.2f} seconds")
+
+
+def _eta_calculate(
+    start_delta,
+    processed_files_counter,
+    number_of_files_to_process,
+    avg_records_per_sec,
+):
+    elapsed_sec = start_delta.total_seconds()
+    if processed_files_counter <= 0:
+        # cannot calculate ETA if no files have been processed yet
+        return float("nan"), 0
+
+    new_avg_records_per_sec = processed_files_counter / elapsed_sec
+
+    # average the two new averages
+    avg_records_per_sec = (avg_records_per_sec + new_avg_records_per_sec) / 2
+    num_remaining_records = number_of_files_to_process - processed_files_counter
+    remaining_seconds_estimate = int(num_remaining_records / avg_records_per_sec)
+
+    return timedelta(seconds=remaining_seconds_estimate), avg_records_per_sec
 
 
 def _train_label_classifier(
     sc,
     idx_sc,
     all_weights,
-    data_train,
-    raw_data_train,
-    data_eval,
-    raw_data_eval,
+    train_features,
+    train_labels,
+    eval_features,
+    eval_labels,
     scored_codes,
     early_stopping_rounds,
 ):
     label_weights = all_weights[idx_sc]
-
     train_labels, train_weights = _determine_sample_weights(
-        data_train, scored_codes, label_weights
+        train_labels, scored_codes, label_weights
     )
 
     eval_labels, eval_weights = _determine_sample_weights(
-        data_eval, scored_codes, label_weights
+        eval_labels, scored_codes, label_weights
     )
 
     # try negative over positive https://machinelearningmastery.com/xgboost-for-imbalanced-classification/
-    pos_count = len([e for e in eval_labels if e])
-    scale_pos_weight = (len(eval_labels) - pos_count) / pos_count
+    pos_count = len([e for e in train_labels if e])
+    pos_count = max(pos_count, 1)
+    scale_pos_weight = (len(train_labels) - pos_count) / pos_count
 
     model = XGBClassifier(
         booster="dart",  # gbtree, dart or gblinear
@@ -121,10 +359,10 @@ def _train_label_classifier(
     )
 
     model = model.fit(
-        raw_data_train,
+        train_features,
         train_labels,
         sample_weight=train_weights,
-        eval_set=[(raw_data_train, train_labels), (raw_data_eval, eval_labels)],
+        eval_set=[(train_features, train_labels), (eval_features, eval_labels)],
         sample_weight_eval_set=[train_weights, eval_weights],
         early_stopping_rounds=early_stopping_rounds,
         verbose=False,
@@ -133,19 +371,53 @@ def _train_label_classifier(
     return sc, model
 
 
-def _save_experiment(output_directory, to_save_data):
-    print("Saving model...")
+def _determine_sample_weights(
+    data_set, scored_codes, label_weights, weight_threshold=0.5
+):
+    """Using the scoring labels weights to increase the dataset size of positive labels
+    """
+    data_labels = []
+    sample_weights = []
+    for dt in data_set:
+        sample_weight = None
+        for dx in dt:
+            if str(dx) in scored_codes:
+                _sample_weight = label_weights[scored_codes.index(str(dx))]
+                if _sample_weight < weight_threshold:
+                    continue
+                if sample_weight is None or _sample_weight > sample_weight:
+                    sample_weight = _sample_weight
 
-    cur_sec = int(time.time())
-    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
-    joblib.dump(to_save_data, filename, protocol=0)
+        if sample_weight is None:
+            # not a scored label, treat as a negative example (weight of 1)
+            sample_weight = 1.0
+            data_labels.append(False)
+        else:
+            data_labels.append(True)
+        sample_weights.append(sample_weight)
+    return data_labels, sample_weights
 
-    print(f"Saved to {filename}")
 
+def _display_metrics(logger, features_df, ground_truth, to_save_data):
+    classes = []
+    labels = []
+    scores = []
 
-def _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data):
-    # Calculate the challenge related metrics on the evaluation data set
-    print("Calculating challenge related metrics")
+    for k, v in to_save_data.items():
+        if not is_number(k):
+            continue
+
+        classes.append(str(k))
+        labels.append(v.predict(features_df).tolist())
+        scores.append(v.predict_proba(features_df)[:, 1].tolist())
+
+    labels = np.array(labels).T
+    scores = np.array(scores).T
+
+    raw_ground_truth_labels = []
+    for dx in ground_truth:
+        raw_ground_truth_labels.append([str(dv) for dv in dx])
+
     (
         auroc,
         auprc,
@@ -154,14 +426,17 @@ def _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data):
         f_beta_measure,
         g_beta_measure,
         challenge_metric,
-    ) = train_evaluate_score_batch_helper(
-        data_eval, raw_data_eval, data_cache, to_save_data
+    ) = evaluate_score_batch(
+        predicted_classes=classes,
+        predicted_labels=labels,
+        predicted_probabilities=scores,
+        raw_ground_truth_labels=raw_ground_truth_labels,
     )
 
-    print(
+    logger.info(
         "AUROC | AUPRC | Accuracy | F-measure | Fbeta-measure | Gbeta-measure | Challenge metric"
     )
-    print(
+    logger.info(
         f"{auroc:>5.3f} | {auprc:>5.3f} | {accuracy:>8.3f} | {f_measure:>9.3f} |"
         f" {f_beta_measure:>13.3f} | {g_beta_measure:>13.3f} | {challenge_metric:>16.3f}"
     )
@@ -175,92 +450,11 @@ def _display_metrics(data_eval, raw_data_eval, data_cache, to_save_data):
     to_save_data["challenge_metric"] = challenge_metric
 
 
-def _generate_data_cache(data_cache_fp, header_files):
-    if os.path.isfile(data_cache_fp):
-        print(f"Loading cached dataset from '{data_cache_fp}'")
-        data_cache = joblib.load(data_cache_fp, mmap_mode="r")
-    else:
-        # CHUNK THE HEADER FILES
-        chunk_size = 100
-        chunk_idx = 0
-        chunk = 0
-        while chunk_idx < len(header_files):
-            data_cache = np.concatenate(
-                joblib.Parallel(
-                    verbose=1,
-                    n_jobs=-1,
-                    backend="multiprocessing",  # "loky", "threading"
-                )(
-                    joblib.delayed(hea_fp_to_np_array)(hea_fp)
-                    for hea_fp in header_files[chunk_idx : chunk_idx + chunk_size]
-                )
-            )
-            chunk_data_cache_fp = f"{data_cache_fp}.{chunk}"
-            print(f"Saving cache of dataset chunk to '{chunk_data_cache_fp}'")
-            joblib.dump(data_cache, chunk_data_cache_fp)
+def _save_experiment(logger, output_directory, to_save_data):
+    logger.info("Saving model...")
 
-            chunk_idx += chunk_size
-            chunk += 1
+    cur_sec = int(time())
+    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
+    joblib.dump(to_save_data, filename, protocol=0)
 
-        # join all of the chunks into a single numpy file
-        chunk_file_paths = glob(f"{data_cache_fp}.*")
-        chunk_files = []
-        for chunk_fp in chunk_file_paths:
-            chunk_file = joblib.load(chunk_fp, mmap_mode="r")
-            chunk_files.append(chunk_file)
-
-        print(f"Saving cache of dataset to '{data_cache_fp}'")
-        data_cache = np.concatenate(chunk_files)
-        joblib.dump(data_cache, data_cache_fp)
-
-    return data_cache
-
-
-def _determine_sample_weights(
-    data_set, scored_codes, label_weights, weight_threshold=0.5
-):
-    """Using the scoring labels weights to increase the dataset size of positive labels
-    """
-    data_labels = []
-    sample_weights = []
-    for dt in data_set:
-        sample_weight = None
-        for dx in dt["dx"]:
-            if str(dx) in scored_codes:
-                _sample_weight = label_weights[scored_codes.index(str(dx))]
-                if _sample_weight < weight_threshold:
-                    continue
-                if sample_weight is None or _sample_weight > sample_weight:
-                    sample_weight = _sample_weight
-
-        if sample_weight is None:
-            # not a scored label, treat as a negative example (weight of 1)
-            sample_weight = 1
-            data_labels.append(False)
-        else:
-            data_labels.append(True)
-        sample_weights.append(sample_weight)
-    return data_labels, sample_weights
-
-
-# Load challenge data.
-def load_challenge_data(header_file):
-    with open(header_file, "r") as f:
-        header = f.readlines()
-    mat_file = header_file.replace(".hea", ".mat")
-    x = loadmat(mat_file)
-    recording = np.asarray(x["val"], dtype=np.float64)
-    return recording, header
-
-
-# Find unique classes.
-def get_classes(input_directory, filenames):
-    classes = set()
-    for filename in filenames:
-        with open(filename, "r") as f:
-            for l in f:
-                if l.startswith("#Dx"):
-                    tmp = l.split(": ")[1].split(",")
-                    for c in tmp:
-                        classes.add(c.strip())
-    return sorted(classes)
+    logger.info(f"Saved to {filename}")

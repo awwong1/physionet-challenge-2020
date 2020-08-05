@@ -8,10 +8,11 @@ from feature_extractor import (
     IR_COLS,
     HB_SIG_TSFRESH_COLS,
     LEAD_SIG_TSFRESH_COLS,
+    hea_fp_to_np_array
 )
-from train_12ECG_classifier import hea_fp_to_np_array
 
 
+@unittest.skip("Feature Extractor class no longer used")
 class TestFeatureExtractor(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
