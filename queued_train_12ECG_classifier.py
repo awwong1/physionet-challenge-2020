@@ -299,9 +299,9 @@ def _train_label_classifier(
     scale_pos_weight = (len(train_labels) - pos_count) / pos_count
 
     model = XGBClassifier(
-        booster="gbtree",  # gbtree, dart or gblinear
+        booster="dart",  # gbtree, dart or gblinear
         verbosity=0,
-        # tree_method="gpu_hist",
+        tree_method="gpu_hist",
         sampling_method="gradient_based",
         scale_pos_weight=scale_pos_weight,
     )
@@ -407,4 +407,4 @@ def _save_experiment(logger, output_directory, to_save_data):
     filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
     joblib.dump(to_save_data, filename, protocol=0)
 
-    logger(f"Saved to {filename}")
+    logger.info(f"Saved to {filename}")
