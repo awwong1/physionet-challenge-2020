@@ -215,7 +215,7 @@ def train_12ECG_classifier(
 
     logger.info(f"Loading features_df from '{features_fp}'")
     features_df = pd.read_csv(
-        features_fp, header=0, names=fieldnames, index_col="header_file", nrows=20
+        features_fp, header=0, names=fieldnames, index_col="header_file"
     )
     logger.info("Constructing labels array...")
     labels = [mapped_records[row[0]] for row in features_df.itertuples()]
