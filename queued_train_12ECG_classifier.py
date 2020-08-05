@@ -94,6 +94,7 @@ def train_12ECG_classifier(
     # all CPUs used for feature extraction
     num_feature_extractor_procs = max(num_cpus, 1)
     feature_extractor_procs = []
+    killed_extractor_procs = []
     for _ in range(num_feature_extractor_procs):
         p = multiprocessing.Process(
             target=feat_extract_process, args=(input_queue, output_queue)
@@ -129,6 +130,23 @@ def train_12ECG_classifier(
                     # all files have been processed
                     if all(not p.is_alive() for p in feature_extractor_procs):
                         break
+
+                    num_feature_extractor_procs = len(feature_extractor_procs)
+                    for fe_proc_idx in range(num_feature_extractor_procs):
+                        p = feature_extractor_procs[fe_proc_idx]
+                        if p in killed_extractor_procs:
+                            continue
+                        if not p.is_alive():
+                            logger.info(f"{p.pid} (exitcode: {p.exitcode}) is not alive, but queue still contains tasks!")
+                            logger.info("Joining and starting new process...")
+                            p.join()
+                            killed_extractor_procs.append(p)
+                            p_new = multiprocessing.Process(
+                                target=feat_extract_process, args=(input_queue, output_queue)
+                            )
+                            p_new.start()
+                            feature_extractor_procs.append(p_new)
+
                 finally:
                     out_cur = datetime.now()
                     if out_log is None or out_cur - out_log > timedelta(seconds=5):
