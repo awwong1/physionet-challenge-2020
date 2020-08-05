@@ -10,20 +10,18 @@ from time import time
 import joblib
 import numpy as np
 import pandas as pd
-import wfdb
+# import wfdb
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
-from neurokit2_parallel import (
-    ECG_LEAD_NAMES,
-    KEYS_INTERVALRELATED,
-    KEYS_TSFRESH,
-    wfdb_record_to_feature_dataframe,
-)
-from util.log import configure_logging
-from util.evaluate_12ECG_score import load_table, is_number
-from util.evaluation_helper import evaluate_score_batch
+from driver import load_challenge_data
+from neurokit2_parallel import (ECG_LEAD_NAMES, KEYS_INTERVALRELATED,
+                                KEYS_TSFRESH, wfdb_record_to_feature_dataframe)
 from util.elapsed_timer import ElapsedTimer
+from util.evaluate_12ECG_score import is_number, load_table
+from util.evaluation_helper import evaluate_score_batch
+from util.log import configure_logging
+from util.raw_to_wfdb import convert_to_wfdb_record
 
 
 def _get_fieldnames():
@@ -46,12 +44,20 @@ def feat_extract_process(
 ):
     while True:
         try:
-            header_file_path = input_queue.get_nowait()
+            header_file_path = input_queue.get(True, 1)
             input_queue.task_done()
         except queue.Empty:
             # When the input queue is empty, worker process terminates
+            # NOTE: queue.Empty may be raised even in input_queue contains values
+            # parent process should respawn new workers in this edge case
             break
-        r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
+
+        # for some reason, OS FileError (Too many files) is raised...
+        # r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
+
+        mat_fp = header_file_path.replace(".hea", ".mat")
+        data, header_data = load_challenge_data(mat_fp)
+        r = convert_to_wfdb_record(data, header_data)
 
         record_features, dx = wfdb_record_to_feature_dataframe(r)
 
@@ -122,6 +128,7 @@ def train_12ECG_classifier(
     out_start = datetime.now()
     out_log = None
     fieldnames = _get_fieldnames()
+    avg_records_per_sec = 0
 
     # initialize the header if the file does not exist
     if not os.path.isfile(features_fp):
@@ -144,7 +151,11 @@ def train_12ECG_classifier(
                 except queue.Empty:
                     # When the output queue is empty and all workers are terminated
                     # all files have been processed
-                    if all(not p.is_alive() for p in feature_extractor_procs):
+
+                    if input_queue.empty() and all(
+                        not p.is_alive() for p in feature_extractor_procs
+                    ):
+                        # input queue is empty and all children processes have exited
                         break
 
                     num_feature_extractor_procs = len(feature_extractor_procs)
@@ -153,10 +164,12 @@ def train_12ECG_classifier(
                         if p in killed_extractor_procs:
                             continue
                         if not p.is_alive():
-                            logger.info(
-                                f"{p.pid} (exitcode: {p.exitcode}) is not alive, but queue still contains tasks!"
+                            disp_str = (
+                                f"{p.pid} (exitcode: {p.exitcode}) is not alive "
+                                f"while input queue contains {input_queue.qsize()} tasks! "
+                                "Restarting..."
                             )
-                            logger.info("Joining and starting new process...")
+                            logger.info(disp_str)
                             p.join()
                             killed_extractor_procs.append(p)
                             p_new = multiprocessing.Process(
@@ -171,23 +184,15 @@ def train_12ECG_classifier(
                     if out_log is None or out_cur - out_log > timedelta(seconds=5):
                         start_delta = out_cur - out_start
 
-                        if processed_files_counter > 0:
-                            avg_hours = (
-                                (
-                                    len(process_header_files)
-                                    * (
-                                        start_delta.total_seconds()
-                                        / processed_files_counter
-                                    )
-                                )
-                                / 60
-                                / 60
-                            )
-                        else:
-                            avg_hours = float("nan")
+                        remaining_time, avg_records_per_sec = _eta_calculate(
+                            start_delta,
+                            processed_files_counter,
+                            len(process_header_files),
+                            avg_records_per_sec,
+                        )
 
                         logger.info(
-                            f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {avg_hours} hr)"
+                            f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {remaining_time} remain)"
                         )
                         out_log = out_cur
 
@@ -271,6 +276,27 @@ def train_12ECG_classifier(
             _save_experiment(logger, output_directory, to_save_data)
 
         logger.info(f"Experiment {experiment_num} took {timer.duration:.2f} seconds")
+
+
+def _eta_calculate(
+    start_delta,
+    processed_files_counter,
+    number_of_files_to_process,
+    avg_records_per_sec,
+):
+    elapsed_sec = start_delta.total_seconds()
+    if processed_files_counter <= 0:
+        # cannot calculate ETA if no files have been processed yet
+        return float("nan"), 0
+
+    new_avg_records_per_sec = processed_files_counter / elapsed_sec
+
+    # average the two new averages
+    avg_records_per_sec = (avg_records_per_sec + new_avg_records_per_sec) / 2
+    num_remaining_records = number_of_files_to_process - processed_files_counter
+    remaining_seconds_estimate = int(num_remaining_records / avg_records_per_sec)
+
+    return timedelta(seconds=remaining_seconds_estimate), avg_records_per_sec
 
 
 def _train_label_classifier(
@@ -364,9 +390,7 @@ def _display_metrics(logger, features_df, ground_truth, to_save_data):
 
     raw_ground_truth_labels = []
     for dx in ground_truth:
-        raw_ground_truth_labels.append([
-            str(dv) for dv in dx
-        ])
+        raw_ground_truth_labels.append([str(dv) for dv in dx])
 
     (
         auroc,
