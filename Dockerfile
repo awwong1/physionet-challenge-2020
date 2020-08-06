@@ -8,7 +8,7 @@ COPY ./ /physionet
 WORKDIR /physionet
 
 RUN apt-get update
-RUN apt-get upgrade
+RUN apt-get upgrade -y
 
 # Pull the required remote repos
 RUN git submodule update --init --recursive
