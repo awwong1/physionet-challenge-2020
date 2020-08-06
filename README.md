@@ -45,7 +45,29 @@ All of the raw training data is available from [this discussion post](https://gr
 
 # Example Classifier
 
-TODO: Update source code with proper submission attempt.
+**Docker must have GPU support!** See [NVIDIA/nvidia-docker](https://github.com/NVIDIA/nvidia-docker)
+
+The following code is run from a fresh clone of this repository, and meant to demonstrate that the code works according to the [challenge specifications](https://physionetchallenges.github.io/2020/submissions).
+
+Tested on a local server, `NVIDIA-SMI 450.57 | Driver Version: 450.57 | CUDA Version: 11.0`.
+
+```bash
+# Build the docker image
+$ docker build -t image .
+# Open up an interactive shell
+$ docker run --gpus all -it image bash
+
+# Within Docker, train a model on the unittest data and store it in the model folder
+root@HASH$ python3 train_model.py tests/data model
+# loky warnings may be ignored, alternatively to silence warnings:
+root@HASH$ python3 -W ignore train_model.py tests/data model
+
+# after model is trained, run the driver code
+root@HASH$ python3 driver.py model tests/data output
+
+# after output is generated, run the evaluation code
+root@HASH$ python3 evaluation-2020/evaluate_12ECG_score.py tests/data output
+```
 
 # Example classifier code for Python for the PhysioNet/CinC Challenge 2020
 
