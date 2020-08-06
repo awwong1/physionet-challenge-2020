@@ -10,6 +10,7 @@ from time import time
 import joblib
 import numpy as np
 import pandas as pd
+import psutil
 
 # import wfdb
 from sklearn.model_selection import train_test_split
@@ -129,16 +130,25 @@ def train_12ECG_classifier(
         "Number of ECG records remain to process: %d", len(process_header_files)
     )
 
-    num_cpus = len(os.sched_getaffinity(0))
-    logger.info("Number of available CPUs: %d", num_cpus)
-
     # Setup & populate input queue, then initialize output queue
     input_queue = multiprocessing.JoinableQueue()
     for header_file in process_header_files:
         input_queue.put_nowait(header_file)
     output_queue = multiprocessing.JoinableQueue()
 
-    # all CPUs used for feature extraction
+    # calculate CPUs used for feature extraction
+    num_cpus = len(os.sched_getaffinity(0))
+    logger.info("Number of available CPUs: %d", num_cpus)
+
+    total_ram_bytes = psutil.virtual_memory().total
+    total_ram_GiB = total_ram_bytes / (1024 ** 3)
+    ram_bottleneck_cpus = max(int(total_ram_GiB / 2.3), 1)
+    logger.info(f"Available virtual memory: {total_ram_GiB} GiB")
+
+    if ram_bottleneck_cpus < num_cpus:
+        logger.info(f"Each proccess takes ~2.3 GiB, capping to {ram_bottleneck_cpus} processes")
+        num_cpus = ram_bottleneck_cpus
+
     num_feature_extractor_procs = max(num_cpus, 1)
     feature_extractor_procs = []
     killed_extractor_procs = []
