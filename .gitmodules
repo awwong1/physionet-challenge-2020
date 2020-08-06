@@ -4,4 +4,4 @@
 [submodule "NeuroKit"]
 	path = NeuroKit
 	url = https://github.com/awwong1/NeuroKit.git
-	branch = dev
+	branch = physionet_2020
