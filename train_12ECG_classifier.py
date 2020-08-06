@@ -3,6 +3,7 @@ import json
 import multiprocessing
 import os
 import queue
+import warnings
 from datetime import datetime, timedelta
 from glob import glob
 from time import time
@@ -61,16 +62,18 @@ def feat_extract_process(
 
         # for some reason, OS FileError (Too many files) is raised...
         # r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
 
-        mat_fp = header_file_path.replace(".hea", ".mat")
-        data, header_data = load_challenge_data(mat_fp)
-        r = convert_to_wfdb_record(data, header_data)
+            mat_fp = header_file_path.replace(".hea", ".mat")
+            data, header_data = load_challenge_data(mat_fp)
+            r = convert_to_wfdb_record(data, header_data)
 
-        record_features, dx = wfdb_record_to_feature_dataframe(r)
+            record_features, dx = wfdb_record_to_feature_dataframe(r)
 
-        # turn dataframe record_features into dict flatten out the values (one key to one row)
-        ecg_features = dict((k, v[0]) for (k, v) in record_features.to_dict().items())
-        output_queue.put((header_file_path, ecg_features, dx))
+            # turn dataframe record_features into dict flatten out the values (one key to one row)
+            ecg_features = dict((k, v[0]) for (k, v) in record_features.to_dict().items())
+            output_queue.put((header_file_path, ecg_features, dx))
 
 
 def train_12ECG_classifier(
