@@ -7,9 +7,13 @@ RUN mkdir /physionet
 COPY ./ /physionet
 WORKDIR /physionet
 
+RUN apt-get update
+RUN apt-get upgrade
+
 # Pull the required remote repos
 RUN git submodule update --init --recursive
 # Install python requirements
+RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 # Install updated NeuroKit2 library
 RUN pip install --upgrade ./NeuroKit
