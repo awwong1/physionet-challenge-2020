@@ -83,8 +83,8 @@ def train_12ECG_classifier(
     features_fp="features.csv",
     weights_file="evaluation-2020/weights.csv",
     early_stopping_rounds=20,
-    experiments_to_run=1,  # 100 for paper
-    evaluation_size=0.0,  # 0.15 for paper
+    experiments_to_run=100,  # 100 for paper
+    evaluation_size=0.15,  # 0.15 for paper
 ):
     logger = configure_logging()
 
