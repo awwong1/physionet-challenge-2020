@@ -1,4 +1,5 @@
-FROM python:3.7.3-stretch
+# FROM python:3.7.3-stretch
+FROM nvidia/cuda:10.1-cudnn7-devel
 
 ## The MAINTAINER instruction sets the Author field of the generated images
 MAINTAINER alex.wong@ualberta.ca
