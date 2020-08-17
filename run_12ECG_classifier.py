@@ -12,7 +12,7 @@ from neurokit2_parallel import wfdb_record_to_feature_dataframe
 def run_12ECG_classifier(data, header_data, loaded_model):
     # Use your classifier here to obtain a label and score for each class.
     r = convert_to_wfdb_record(data, header_data)
-    record_features, dx = wfdb_record_to_feature_dataframe(r)
+    record_features, _ = wfdb_record_to_feature_dataframe(r)
 
     featured_classifier_run = functools.partial(
         _partial_run_classifier, record_features=record_features

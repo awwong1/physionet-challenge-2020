@@ -13,6 +13,7 @@ from neurokit2_parallel import (
     ECG_LEAD_NAMES,
     KEYS_INTERVALRELATED,
     KEYS_TSFRESH,
+    FC_PARAMETERS,
     ecg_clean,
     ecg_peaks,
     signal_rate,
@@ -362,6 +363,7 @@ class TestNeurokit2Parallel(unittest.TestCase):
                 column_id="lead",
                 column_sort="time",
                 disable_progressbar=True,
+                default_fc_parameters=FC_PARAMETERS,
                 n_jobs=0,
             )
 
@@ -387,6 +389,7 @@ class TestNeurokit2Parallel(unittest.TestCase):
                 column_id="lead",
                 column_sort="time",
                 disable_progressbar=True,
+                default_fc_parameters=FC_PARAMETERS,
                 n_jobs=0,
             )
 
