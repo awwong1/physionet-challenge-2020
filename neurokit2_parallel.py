@@ -139,11 +139,11 @@ KEYS_TSFRESH = [
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"mean"',
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"min"',
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"var"',
-    "approximate_entropy__m_2__r_0.1",
-    "approximate_entropy__m_2__r_0.3",
-    "approximate_entropy__m_2__r_0.5",
-    "approximate_entropy__m_2__r_0.7",
-    "approximate_entropy__m_2__r_0.9",
+    # "approximate_entropy__m_2__r_0.1",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    # "approximate_entropy__m_2__r_0.3",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    # "approximate_entropy__m_2__r_0.5",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    # "approximate_entropy__m_2__r_0.7",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    # "approximate_entropy__m_2__r_0.9",  # NOT PART OF EFFICIENT_FC_PARAMETERS
     "ar_coefficient__coeff_0__k_10",
     "ar_coefficient__coeff_10__k_10",
     "ar_coefficient__coeff_1__k_10",
@@ -811,7 +811,7 @@ KEYS_TSFRESH = [
     "ratio_beyond_r_sigma__r_6",
     "ratio_beyond_r_sigma__r_7",
     "ratio_value_number_to_time_series_length",
-    "sample_entropy",
+    # "sample_entropy",  # NOT PART OF EFFICIENT FC PARAMETERS
     "skewness",
     "spkt_welch_density__coeff_2",
     "spkt_welch_density__coeff_5",
@@ -850,6 +850,8 @@ KEYS_TSFRESH = [
     "variance_larger_than_standard_deviation",
     "variation_coefficient",
 ]
+
+FC_PARAMETERS = tsfresh.feature_extraction.EfficientFCParameters()
 
 
 def parse_comments(r):
@@ -1019,6 +1021,7 @@ def _tsfresh_heartbeat_dataframe(signals_df, rpeaks, sampling_rate=500, lead_nam
         column_value=f"{lead_name}_hb",
         show_warnings=False,
         disable_progressbar=True,
+        default_fc_parameters=FC_PARAMETERS,
         n_jobs=0,
     )
 
@@ -1064,6 +1067,7 @@ def _tsfresh_signal_dataframe(
         column_value=f"{lead_name}_sig",
         show_warnings=False,
         disable_progressbar=True,
+        default_fc_parameters=FC_PARAMETERS,
         n_jobs=0,
     )
     return sig_df
