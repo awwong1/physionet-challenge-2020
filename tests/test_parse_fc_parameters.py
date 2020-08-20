@@ -65,24 +65,24 @@ class TestParseFCParameters(unittest.TestCase):
             signal_length, num_leads = cleaned_signals.shape
 
             # each lead should be processed separately and then combined back together
-            record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
-                joblib.delayed(lead_to_feature_dataframe)(
-                    r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs, fc_parameters
-                )
-                for i in range(num_leads)
-            )
-
-            # single process version
-            # record_features = [
-            #     lead_to_feature_dataframe(
-            #         r.p_signal[:, i],
-            #         cleaned_signals[:, i],
-            #         ECG_LEAD_NAMES[i],
-            #         r.fs,
-            #         fc_parameters,
+            # record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
+            #     joblib.delayed(lead_to_feature_dataframe)(
+            #         r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs, fc_parameters
             #     )
             #     for i in range(num_leads)
-            # ]
+            # )
+
+            # single process version
+            record_features = [
+                lead_to_feature_dataframe(
+                    r.p_signal[:, i],
+                    cleaned_signals[:, i],
+                    ECG_LEAD_NAMES[i],
+                    r.fs,
+                    fc_parameters,
+                )
+                for i in range(num_leads)
+            ]
 
             # meta features
             meta_dict = {}

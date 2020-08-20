@@ -943,7 +943,13 @@ def lead_to_feature_dataframe(
         hrv_data_dict = {}
         for k, v in hrv_df.to_dict().items():
             feat_key = f"{lead_name}_{k}"
-            if not fc_parameters or (fc_parameters and feat_key in fc_parameters):
+            if fc_parameters:
+                # fc_parameters shim exists
+                if feat_key in fc_parameters:
+                    # shim is relevant
+                    hrv_data_dict[feat_key] = v
+            else:
+                # no fc_parameters shim, kludge all
                 hrv_data_dict[feat_key] = v
         hrv_df = pd.DataFrame(hrv_data_dict)
 
@@ -959,24 +965,27 @@ def lead_to_feature_dataframe(
     except Exception:
         # cannot rely on KEYS_TSFRESH if fc_parameters defined
         column_value = f"{lead_name}_hb"
-        if fc_parameters and column_value in fc_parameters:
-            default_fc_parameters = fc_parameters[column_value]
-            hb_df = tsfresh.extract_features(
-                pd.DataFrame(
-                    {
-                        "lead": [0, 0, 0],
-                        "time": [0, 0.5, 1],
-                        column_value: [0.5, 0.5, 0.5],
-                    }
-                ),
-                column_id="lead",
-                column_sort="time",
-                column_value=column_value,
-                show_warnings=False,
-                disable_progressbar=True,
-                default_fc_parameters=default_fc_parameters,
-                n_jobs=0,
-            )
+        if fc_parameters:
+            if column_value in fc_parameters:
+                default_fc_parameters = fc_parameters[column_value]
+                hb_df = tsfresh.extract_features(
+                    pd.DataFrame(
+                        {
+                            "lead": [0, 0, 0],
+                            "time": [0, 0.5, 1],
+                            column_value: [0.5, 0.5, 0.5],
+                        }
+                    ),
+                    column_id="lead",
+                    column_sort="time",
+                    column_value=column_value,
+                    show_warnings=False,
+                    disable_progressbar=True,
+                    default_fc_parameters=default_fc_parameters,
+                    n_jobs=0,
+                )
+            else:
+                hb_df = pd.DataFrame()
         else:
             hb_df = pd.DataFrame.from_dict(
                 dict((f"{lead_name}_hb__{k}", (np.nan,)) for k in KEYS_TSFRESH)
@@ -993,24 +1002,27 @@ def lead_to_feature_dataframe(
     except Exception:
         # cannot rely on KEYS_TSFRESH if fc_parameters defined
         column_value = f"{lead_name}_sig"
-        if fc_parameters and column_value in fc_parameters:
-            default_fc_parameters = fc_parameters[column_value]
-            sig_df = tsfresh.extract_features(
-                pd.DataFrame(
-                    {
-                        "lead": [0, 0, 0],
-                        "time": [0, 0.5, 1],
-                        column_value: [0.5, 0.5, 0.5],
-                    }
-                ),
-                column_id="lead",
-                column_sort="time",
-                column_value=column_value,
-                show_warnings=False,
-                disable_progressbar=True,
-                default_fc_parameters=default_fc_parameters,
-                n_jobs=0,
-            )
+        if fc_parameters:
+            if column_value in fc_parameters:
+                default_fc_parameters = fc_parameters[column_value]
+                sig_df = tsfresh.extract_features(
+                    pd.DataFrame(
+                        {
+                            "lead": [0, 0, 0],
+                            "time": [0, 0.5, 1],
+                            column_value: [0.5, 0.5, 0.5],
+                        }
+                    ),
+                    column_id="lead",
+                    column_sort="time",
+                    column_value=column_value,
+                    show_warnings=False,
+                    disable_progressbar=True,
+                    default_fc_parameters=default_fc_parameters,
+                    n_jobs=0,
+                )
+            else:
+                sig_df = pd.DataFrame()
         else:
             sig_df = pd.DataFrame.from_dict(
                 dict((f"{lead_name}_sig__{k}", (np.nan,)) for k in KEYS_TSFRESH)
@@ -1085,8 +1097,11 @@ def _tsfresh_heartbeat_dataframe(
         }
     )
 
-    if fc_parameters and column_value in fc_parameters:
-        default_fc_parameters = fc_parameters[column_value]
+    if fc_parameters:
+        if column_value in fc_parameters:
+            default_fc_parameters = fc_parameters[column_value]
+        else:
+            default_fc_parameters = {}
     else:
         default_fc_parameters = FC_PARAMETERS
 
@@ -1138,8 +1153,11 @@ def _tsfresh_signal_dataframe(
         {"lead": [0,] * num_samples, "time": times, column_value: cleaned_signal,}
     )
 
-    if fc_parameters and column_value in fc_parameters:
-        default_fc_parameters = fc_parameters[column_value]
+    if fc_parameters:
+        if column_value in fc_parameters:
+            default_fc_parameters = fc_parameters[column_value]
+        else:
+            default_fc_parameters = {}
     else:
         default_fc_parameters = FC_PARAMETERS
 
