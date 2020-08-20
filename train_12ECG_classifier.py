@@ -3,6 +3,7 @@ import json
 import multiprocessing
 import os
 import queue
+import subprocess
 import warnings
 from datetime import datetime, timedelta
 from glob import glob
@@ -71,7 +72,9 @@ def feat_extract_process(
             data, header_data = load_challenge_data(mat_fp)
             r = convert_to_wfdb_record(data, header_data)
 
-            record_features, dx = wfdb_record_to_feature_dataframe(r, fc_parameters=fc_parameters)
+            record_features, dx = wfdb_record_to_feature_dataframe(
+                r, fc_parameters=fc_parameters
+            )
 
             # turn dataframe record_features into dict flatten out the values (one key to one row)
             ecg_features = dict(
@@ -178,6 +181,13 @@ def train_12ECG_classifier(
     total_ram_GiB = total_ram_bytes / (1024 ** 3)
     ram_bottleneck_cpus = max(int(total_ram_GiB / 2.3), 1)
     logger.info(f"Available virtual memory: {total_ram_GiB} GiB")
+
+    # quick test for GPUs used, allow no GPU classifier training
+    try:
+        num_gpus = str(subprocess.check_output(["nvidia-smi", "-L"])).count("UUID")
+    except:
+        num_gpus = 0
+    logger.info(f"Detected {num_gpus} gpus.")
 
     if ram_bottleneck_cpus < num_cpus:
         logger.info(
@@ -352,6 +362,7 @@ def train_12ECG_classifier(
                     eval_labels,
                     scored_codes,
                     early_stopping_rounds,
+                    num_gpus,
                 )
 
                 to_save_data[sc] = model
@@ -397,6 +408,7 @@ def _train_label_classifier(
     eval_labels,
     scored_codes,
     early_stopping_rounds,
+    num_gpus,
 ):
     label_weights = all_weights[idx_sc]
     train_labels, train_weights = _determine_sample_weights(
@@ -413,11 +425,17 @@ def _train_label_classifier(
     pos_count = max(pos_count, 1)
     scale_pos_weight = (len(train_labels) - pos_count) / pos_count
 
+    tree_method = "auto"
+    sampling_method = "uniform"
+    if num_gpus > 0:
+        tree_method = "gpu_hist"
+        sampling_method = "gradient_based"
+
     model = XGBClassifier(
         booster="dart",  # gbtree, dart or gblinear
         verbosity=0,
-        tree_method="gpu_hist",
-        sampling_method="gradient_based",
+        tree_method=tree_method,
+        sampling_method=sampling_method,
         scale_pos_weight=scale_pos_weight,
     )
 
