@@ -17,6 +17,10 @@ def run_12ECG_classifier(data, header_data, loaded_model):
     models, fc_parameters = loaded_model
     record_features, _ = wfdb_record_to_feature_dataframe(r, fc_parameters=fc_parameters)
 
+    field_names = models["field_names"]
+    # xgboost does not like out of order dataframes....
+    record_features = record_features.reindex(field_names, axis=1)
+
     featured_classifier_run = functools.partial(
         _partial_run_classifier, record_features=record_features
     )

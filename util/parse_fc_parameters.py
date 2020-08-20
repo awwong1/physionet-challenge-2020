@@ -8,7 +8,7 @@ def parse_fc_parameters(important_features):
     """
 
     per_lead_fc_params = {}
-    for important_feature in important_features:
+    for important_feature in sorted(important_features):
         lead_w_feat_type, *tsfresh_config = important_feature.split("__")
 
         # lead, feat_type = lead_w_feat_type.split("_")

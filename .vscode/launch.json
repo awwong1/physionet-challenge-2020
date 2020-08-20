@@ -10,8 +10,8 @@
             "request": "launch",
             "program": "${workspaceFolder}/train_model.py",
             "args": [
-                "data",
-                "model"
+                "tests/data",
+                "model_test"
             ],
             "console": "integratedTerminal"
         },
@@ -21,7 +21,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/driver.py",
             "args": [
-                "model",
+                "model_test",
                 "tests/data",
                 "out"
             ],

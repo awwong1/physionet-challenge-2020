@@ -185,7 +185,7 @@ def train_12ECG_classifier(
     # quick test for GPUs used, allow no GPU classifier training
     try:
         num_gpus = str(subprocess.check_output(["nvidia-smi", "-L"])).count("UUID")
-    except:
+    except Exception:
         num_gpus = 0
     logger.info(f"Detected {num_gpus} gpus.")
 
@@ -346,6 +346,7 @@ def train_12ECG_classifier(
             to_save_data = {
                 "train_records": train_features.index.to_list(),
                 "eval_records": eval_features.index.to_list(),
+                "field_names": features_df.columns.to_list(),
             }
 
             for idx_sc, sc in enumerate(scored_codes):

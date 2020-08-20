@@ -7,12 +7,9 @@ import pandas as pd
 import tsfresh
 import wfdb
 
-from neurokit2_parallel import (
-    ECG_LEAD_NAMES,
-    ecg_clean,
-    lead_to_feature_dataframe,
-    parse_comments,
-)
+from neurokit2_parallel import (ECG_LEAD_NAMES, ecg_clean,
+                                lead_to_feature_dataframe, parse_comments,
+                                wfdb_record_to_feature_dataframe)
 from util import parse_fc_parameters
 
 
@@ -65,24 +62,24 @@ class TestParseFCParameters(unittest.TestCase):
             signal_length, num_leads = cleaned_signals.shape
 
             # each lead should be processed separately and then combined back together
-            # record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
-            #     joblib.delayed(lead_to_feature_dataframe)(
-            #         r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs, fc_parameters
-            #     )
-            #     for i in range(num_leads)
-            # )
-
-            # single process version
-            record_features = [
-                lead_to_feature_dataframe(
-                    r.p_signal[:, i],
-                    cleaned_signals[:, i],
-                    ECG_LEAD_NAMES[i],
-                    r.fs,
-                    fc_parameters,
+            record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
+                joblib.delayed(lead_to_feature_dataframe)(
+                    r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs, fc_parameters
                 )
                 for i in range(num_leads)
-            ]
+            )
+
+            # single process version
+            # record_features = [
+            #     lead_to_feature_dataframe(
+            #         r.p_signal[:, i],
+            #         cleaned_signals[:, i],
+            #         ECG_LEAD_NAMES[i],
+            #         r.fs,
+            #         fc_parameters,
+            #     )
+            #     for i in range(num_leads)
+            # ]
 
             # meta features
             meta_dict = {}
@@ -98,6 +95,14 @@ class TestParseFCParameters(unittest.TestCase):
                 [pd.DataFrame(meta_dict)] + record_features, axis=1
             )
 
+            self.assertCountEqual(
+                record_features.columns.to_list(), self.important_features[:1000]
+            )
+
+            # test the run_12ECG_classifier glue
+            record_features, _ = wfdb_record_to_feature_dataframe(
+                r, fc_parameters=fc_parameters
+            )
             self.assertCountEqual(
                 record_features.columns.to_list(), self.important_features[:1000]
             )
