@@ -13,7 +13,7 @@ RUN apt-get upgrade -y
 RUN apt-get install git python3 python3-pip -y
 
 # Symlink python to python3
-RUN ln -s /usr/bin/python3 /usr/bin/python
+# RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Pull the required remote repos
 RUN git submodule update --init --recursive
