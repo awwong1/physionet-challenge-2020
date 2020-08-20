@@ -421,4 +421,5 @@ class TestNeurokit2Parallel(unittest.TestCase):
                 pd.DataFrame({"age": (age,), "sex": (sex,)})
             ] + record_features, axis=1)
 
-            self.assertEqual(record_features.shape, (1, 18950))
+            self.assertEqual(record_features.shape, (1, 18950))  # Comprehensive FC
+            # self.assertEqual(record_features.shape, (1, 18806))  # Efficient FC

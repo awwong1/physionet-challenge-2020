@@ -25,6 +25,7 @@ from neurokit2_parallel import (
     KEYS_TSFRESH,
     wfdb_record_to_feature_dataframe,
 )
+from util import parse_fc_parameters
 from util.elapsed_timer import ElapsedTimer
 from util.evaluate_12ECG_score import is_number, load_table
 from util.evaluation_helper import evaluate_score_batch
@@ -49,6 +50,7 @@ def _get_fieldnames():
 def feat_extract_process(
     input_queue: multiprocessing.JoinableQueue,
     output_queue: multiprocessing.JoinableQueue,
+    fc_parameters: [None, dict],
 ):
     while True:
         try:
@@ -63,16 +65,18 @@ def feat_extract_process(
         # for some reason, OS FileError (Too many files) is raised...
         # r = wfdb.rdrecord(header_file_path.rsplit(".hea")[0])
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
+            warnings.simplefilter("ignore")
 
             mat_fp = header_file_path.replace(".hea", ".mat")
             data, header_data = load_challenge_data(mat_fp)
             r = convert_to_wfdb_record(data, header_data)
 
-            record_features, dx = wfdb_record_to_feature_dataframe(r)
+            record_features, dx = wfdb_record_to_feature_dataframe(r, fc_parameters=fc_parameters)
 
             # turn dataframe record_features into dict flatten out the values (one key to one row)
-            ecg_features = dict((k, v[0]) for (k, v) in record_features.to_dict().items())
+            ecg_features = dict(
+                (k, v[0]) for (k, v) in record_features.to_dict().items()
+            )
             output_queue.put((header_file_path, ecg_features, dx))
 
 
@@ -85,12 +89,34 @@ def train_12ECG_classifier(
     early_stopping_rounds=20,
     experiments_to_run=100,  # 100 for paper
     evaluation_size=0.15,  # 0.15 for paper
+    limit_features_to=1000,
 ):
     logger = configure_logging()
 
     labels_fp = os.path.join(output_directory, labels_fp)
     features_fp = os.path.join(output_directory, features_fp)
     fieldnames = _get_fieldnames()
+    fc_parameters = None
+
+    # HARD CODE IN THE IMPORTANCES RANK!
+    importance_data = None
+    importances_fp = os.path.join("importances_rank.json")
+    if os.path.exists(importances_fp):
+        logger.info(f"Loading importances from '{importances_fp}'")
+        with open(importances_fp) as importancesfile:
+            importance_data = json.load(importancesfile)
+
+        # update the fieldnames to be the important features
+        logger.info(
+            f"Limiting classification to top {limit_features_to} important features!"
+        )
+        important_fields = importance_data["sorted_keys"][:limit_features_to]
+        fc_parameters = parse_fc_parameters(important_fields)
+        fieldnames = ["header_file",] + sorted(important_fields)
+    else:
+        logger.info(
+            "No importances_rank.json found, generating full feature set (VERY SLOW)."
+        )
 
     logger.info(f"Loading feature extraction result from '{labels_fp}'...")
     # check how many files have been processed already, allows feature extraction to be resumable
@@ -110,6 +136,11 @@ def train_12ECG_classifier(
     logger.info(f"Loading feature extraction result from '{features_fp}'...")
     feature_mapped_records = []
     if os.path.isfile(features_fp):
+        # get fieldnames of existing records
+        with open(features_fp, "r", newline="\n") as csvfile:
+            reader = csv.reader(csvfile)
+            fieldnames = next(reader)
+
         with open(features_fp, "r", newline="\n") as csvfile:
             reader = csv.DictReader(csvfile, fieldnames=fieldnames)
             next(reader)  # ignore header
@@ -149,7 +180,9 @@ def train_12ECG_classifier(
     logger.info(f"Available virtual memory: {total_ram_GiB} GiB")
 
     if ram_bottleneck_cpus < num_cpus:
-        logger.info(f"Each proccess takes ~2.3 GiB, capping to {ram_bottleneck_cpus} processes")
+        logger.info(
+            f"Each proccess takes ~2.3 GiB, capping to {ram_bottleneck_cpus} processes"
+        )
         num_cpus = ram_bottleneck_cpus
 
     num_feature_extractor_procs = max(num_cpus, 1)
@@ -157,7 +190,7 @@ def train_12ECG_classifier(
     killed_extractor_procs = []
     for _ in range(num_feature_extractor_procs):
         p = multiprocessing.Process(
-            target=feat_extract_process, args=(input_queue, output_queue)
+            target=feat_extract_process, args=(input_queue, output_queue, fc_parameters)
         )
         p.start()
         feature_extractor_procs.append(p)

@@ -51,5 +51,7 @@ def parse_fc_parameters(important_features):
 
         if len(tsfresh_config) > 0:
             per_lead_fc_params[lead_w_feat_type] = lead_feat_type_fc
+        else:
+            per_lead_fc_params[lead_w_feat_type] = None
 
     return per_lead_fc_params

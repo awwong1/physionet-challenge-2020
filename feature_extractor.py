@@ -1,3 +1,5 @@
+"""NO LONGER USED. SEE neurokit2_parallel.py
+"""
 import re
 
 import joblib

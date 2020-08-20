@@ -139,11 +139,11 @@ KEYS_TSFRESH = [
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"mean"',
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"min"',
     'agg_linear_trend__attr_"stderr"__chunk_len_5__f_agg_"var"',
-    # "approximate_entropy__m_2__r_0.1",  # NOT PART OF EFFICIENT_FC_PARAMETERS
-    # "approximate_entropy__m_2__r_0.3",  # NOT PART OF EFFICIENT_FC_PARAMETERS
-    # "approximate_entropy__m_2__r_0.5",  # NOT PART OF EFFICIENT_FC_PARAMETERS
-    # "approximate_entropy__m_2__r_0.7",  # NOT PART OF EFFICIENT_FC_PARAMETERS
-    # "approximate_entropy__m_2__r_0.9",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    "approximate_entropy__m_2__r_0.1",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    "approximate_entropy__m_2__r_0.3",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    "approximate_entropy__m_2__r_0.5",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    "approximate_entropy__m_2__r_0.7",  # NOT PART OF EFFICIENT_FC_PARAMETERS
+    "approximate_entropy__m_2__r_0.9",  # NOT PART OF EFFICIENT_FC_PARAMETERS
     "ar_coefficient__coeff_0__k_10",
     "ar_coefficient__coeff_10__k_10",
     "ar_coefficient__coeff_1__k_10",
@@ -811,7 +811,7 @@ KEYS_TSFRESH = [
     "ratio_beyond_r_sigma__r_6",
     "ratio_beyond_r_sigma__r_7",
     "ratio_value_number_to_time_series_length",
-    # "sample_entropy",  # NOT PART OF EFFICIENT FC PARAMETERS
+    "sample_entropy",  # NOT PART OF EFFICIENT FC PARAMETERS
     "skewness",
     "spkt_welch_density__coeff_2",
     "spkt_welch_density__coeff_5",
@@ -851,7 +851,8 @@ KEYS_TSFRESH = [
     "variation_coefficient",
 ]
 
-FC_PARAMETERS = tsfresh.feature_extraction.EfficientFCParameters()
+# FC_PARAMETERS = tsfresh.feature_extraction.EfficientFCParameters()
+FC_PARAMETERS = tsfresh.feature_extraction.ComprehensiveFCParameters()
 
 
 def parse_comments(r):
@@ -884,7 +885,7 @@ def parse_comments(r):
     return age, sex, dx
 
 
-def wfdb_record_to_feature_dataframe(r):
+def wfdb_record_to_feature_dataframe(r, fc_parameters=None):
     age, sex, dx = parse_comments(r)
     r.sig_name = ECG_LEAD_NAMES  # force consistent naming
     cleaned_signals = ecg_clean(r.p_signal, sampling_rate=r.fs)
@@ -894,23 +895,40 @@ def wfdb_record_to_feature_dataframe(r):
     # each lead should be processed separately and then combined back together
     record_features = joblib.Parallel(n_jobs=num_leads, verbose=0)(
         joblib.delayed(lead_to_feature_dataframe)(
-            r.p_signal[:, i], cleaned_signals[:, i], ECG_LEAD_NAMES[i], r.fs
+            r.p_signal[:, i],
+            cleaned_signals[:, i],
+            ECG_LEAD_NAMES[i],
+            r.fs,
+            fc_parameters,
         )
         for i in range(num_leads)
     )
-    record_features = pd.concat([
-        pd.DataFrame({"age": (age,), "sex": (sex,)})
-    ] + record_features, axis=1)
+
+    meta_dict = {}
+    if fc_parameters:
+        if "age" in fc_parameters:
+            meta_dict["age"] = (age,)
+        if "sex" in fc_parameters:
+            meta_dict["sex"] = (sex,)
+    else:
+        meta_dict = {"age": (age,), "sex": (sex,)}
+
+    record_features = pd.concat(
+        [pd.DataFrame(meta_dict)] + record_features, axis=1
+    )
+
     return record_features, dx
 
 
-def lead_to_feature_dataframe(raw_signal, cleaned_signal, lead_name, sampling_rate):
+def lead_to_feature_dataframe(
+    raw_signal, cleaned_signal, lead_name, sampling_rate, fc_parameters=None
+):
     signals_df = pd.DataFrame({"ECG_Raw": raw_signal, "ECG_Clean": cleaned_signal})
 
     # Heart Rate Variability Features
     try:
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
+            warnings.simplefilter("ignore")
             hrv_df, signals_df, rpeaks_info = _lead_to_interval_related_dataframe(
                 signals_df, sampling_rate
             )
@@ -922,9 +940,12 @@ def lead_to_feature_dataframe(raw_signal, cleaned_signal, lead_name, sampling_ra
         rpeaks_info = {}
     finally:
         # stick the lead name into all the columns
-        hrv_df = pd.DataFrame(
-            dict((f"{lead_name}_{k}", v) for (k, v) in hrv_df.to_dict().items())
-        )
+        hrv_data_dict = {}
+        for k, v in hrv_df.to_dict().items():
+            feat_key = f"{lead_name}_{k}"
+            if not fc_parameters or (fc_parameters and feat_key in fc_parameters):
+                hrv_data_dict[feat_key] = v
+        hrv_df = pd.DataFrame(hrv_data_dict)
 
     # Heart Beat Template Features
     try:
@@ -933,21 +954,67 @@ def lead_to_feature_dataframe(raw_signal, cleaned_signal, lead_name, sampling_ra
             rpeaks_info["ECG_R_Peaks"],
             sampling_rate=sampling_rate,
             lead_name=lead_name,
+            fc_parameters=fc_parameters,
         )
     except Exception:
-        hb_df = pd.DataFrame.from_dict(
-            dict((f"{lead_name}_hb__{k}", (np.nan,)) for k in KEYS_TSFRESH)
-        )
+        # cannot rely on KEYS_TSFRESH if fc_parameters defined
+        column_value = f"{lead_name}_hb"
+        if fc_parameters and column_value in fc_parameters:
+            default_fc_parameters = fc_parameters[column_value]
+            hb_df = tsfresh.extract_features(
+                pd.DataFrame(
+                    {
+                        "lead": [0, 0, 0],
+                        "time": [0, 0.5, 1],
+                        column_value: [0.5, 0.5, 0.5],
+                    }
+                ),
+                column_id="lead",
+                column_sort="time",
+                column_value=column_value,
+                show_warnings=False,
+                disable_progressbar=True,
+                default_fc_parameters=default_fc_parameters,
+                n_jobs=0,
+            )
+        else:
+            hb_df = pd.DataFrame.from_dict(
+                dict((f"{lead_name}_hb__{k}", (np.nan,)) for k in KEYS_TSFRESH)
+            )
 
     # Full Waveform Features
     try:
         sig_df = _tsfresh_signal_dataframe(
-            cleaned_signal, sampling_rate=sampling_rate, lead_name=lead_name
+            cleaned_signal,
+            sampling_rate=sampling_rate,
+            lead_name=lead_name,
+            fc_parameters=fc_parameters,
         )
     except Exception:
-        sig_df = pd.DataFrame.from_dict(
-            dict((f"{lead_name}_sig__{k}", (np.nan,)) for k in KEYS_TSFRESH)
-        )
+        # cannot rely on KEYS_TSFRESH if fc_parameters defined
+        column_value = f"{lead_name}_sig"
+        if fc_parameters and column_value in fc_parameters:
+            default_fc_parameters = fc_parameters[column_value]
+            sig_df = tsfresh.extract_features(
+                pd.DataFrame(
+                    {
+                        "lead": [0, 0, 0],
+                        "time": [0, 0.5, 1],
+                        column_value: [0.5, 0.5, 0.5],
+                    }
+                ),
+                column_id="lead",
+                column_sort="time",
+                column_value=column_value,
+                show_warnings=False,
+                disable_progressbar=True,
+                default_fc_parameters=default_fc_parameters,
+                n_jobs=0,
+            )
+        else:
+            sig_df = pd.DataFrame.from_dict(
+                dict((f"{lead_name}_sig__{k}", (np.nan,)) for k in KEYS_TSFRESH)
+            )
 
     return pd.concat([hrv_df, hb_df, sig_df], axis=1)
 
@@ -982,7 +1049,9 @@ def _lead_to_interval_related_dataframe(signals_df, sampling_rate):
     return ir_df, signals_df, rpeaks_info
 
 
-def _tsfresh_heartbeat_dataframe(signals_df, rpeaks, sampling_rate=500, lead_name="X"):
+def _tsfresh_heartbeat_dataframe(
+    signals_df, rpeaks, sampling_rate=500, lead_name="X", fc_parameters=None
+):
     # Determine heart rate windows, get the best heart rate
     heartbeats = nk.ecg_segment(
         signals_df.rename(columns={"ECG_Clean": "Signal"}).drop(columns=["ECG_Raw"]),
@@ -1006,22 +1075,29 @@ def _tsfresh_heartbeat_dataframe(signals_df, rpeaks, sampling_rate=500, lead_nam
     hb_duration = hb_num_samples / sampling_rate
     hb_times = np.linspace(0, hb_duration, hb_num_samples).tolist()
 
+    column_value = f"{lead_name}_hb"
+
     hb_input_df = pd.DataFrame(
         {
             "lead": [0,] * hb_num_samples,
             "time": hb_times,
-            f"{lead_name}_hb": best_heartbeat.tolist(),
+            column_value: best_heartbeat.tolist(),
         }
     )
+
+    if fc_parameters and column_value in fc_parameters:
+        default_fc_parameters = fc_parameters[column_value]
+    else:
+        default_fc_parameters = FC_PARAMETERS
 
     hb_df = tsfresh.extract_features(
         hb_input_df,
         column_id="lead",
         column_sort="time",
-        column_value=f"{lead_name}_hb",
+        column_value=column_value,
         show_warnings=False,
         disable_progressbar=True,
-        default_fc_parameters=FC_PARAMETERS,
+        default_fc_parameters=default_fc_parameters,
         n_jobs=0,
     )
 
@@ -1029,7 +1105,12 @@ def _tsfresh_heartbeat_dataframe(signals_df, rpeaks, sampling_rate=500, lead_nam
 
 
 def _tsfresh_signal_dataframe(
-    cleaned_signal, sampling_rate=500, lead_name="X", mod_fs=500, get_num_samples=2000
+    cleaned_signal,
+    sampling_rate=500,
+    lead_name="X",
+    mod_fs=500,
+    get_num_samples=2000,
+    fc_parameters=None,
 ):
     # convert sampling rate to mod_fs
     len_mod_fs = int(len(cleaned_signal) / sampling_rate * mod_fs)
@@ -1052,25 +1133,28 @@ def _tsfresh_signal_dataframe(
     # convert to tsfresh compatible dataframe
 
     times = np.linspace(0, duration, num_samples).tolist()
+    column_value = f"{lead_name}_sig"
     sig_input_df = pd.DataFrame(
-        {
-            "lead": [0,] * num_samples,
-            "time": times,
-            f"{lead_name}_sig": cleaned_signal,
-        }
+        {"lead": [0,] * num_samples, "time": times, column_value: cleaned_signal,}
     )
+
+    if fc_parameters and column_value in fc_parameters:
+        default_fc_parameters = fc_parameters[column_value]
+    else:
+        default_fc_parameters = FC_PARAMETERS
 
     sig_df = tsfresh.extract_features(
         sig_input_df,
         column_id="lead",
         column_sort="time",
-        column_value=f"{lead_name}_sig",
+        column_value=column_value,
         show_warnings=False,
         disable_progressbar=True,
-        default_fc_parameters=FC_PARAMETERS,
+        default_fc_parameters=default_fc_parameters,
         n_jobs=0,
     )
     return sig_df
+
 
 # it was faster to just do single lead multi-process, rather than single process multi-lead :/
 
