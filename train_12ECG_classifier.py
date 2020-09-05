@@ -101,77 +101,63 @@ def train_12ECG_classifier(
     fieldnames = _get_fieldnames()
     fc_parameters = None
 
-    # HARD CODE IN THE IMPORTANCES RANK!
-    importance_data = None
-    importances_fp = os.path.join("importances_rank.json")
-    if os.path.exists(importances_fp):
-        logger.info(f"Loading importances from '{importances_fp}'")
-        with open(importances_fp) as importancesfile:
-            importance_data = json.load(importancesfile)
+    # RERUNNING EXPERIMENT USING SAME DATASET SPLIT, LIMIT TO `limit_features_to`
+    experiment_fps = tuple(sorted(glob(os.path.join(output_directory, "finalized_model_*.sav"))))
+    experiment_fps = [exp_fp for exp_fp in experiment_fps if "feat" not in exp_fp]
 
-        # update the fieldnames to be the important features
-        logger.info(
-            f"Limiting classification to top {limit_features_to} important features!"
-        )
-        important_fields = importance_data["sorted_keys"][:limit_features_to]
-        fc_parameters = parse_fc_parameters(important_fields)
-        fieldnames = ["header_file",] + sorted(important_fields)
-    else:
-        logger.info(
-            "No importances_rank.json found, generating full feature set (VERY SLOW)."
-        )
+    logger.info(f"Rerunning {len(experiment_fps)} experiments, limiting to top {limit_features_to} features...")
 
-    logger.info(f"Loading feature extraction result from '{labels_fp}'...")
-    # check how many files have been processed already, allows feature extraction to be resumable
-    label_mapped_records = []
-    if os.path.isfile(labels_fp):
-        with open(labels_fp, mode="r", newline="\n") as labelfile:
-            for line in labelfile.readlines():
-                header_file_path, _ = json.loads(line)
-                label_mapped_records.append(header_file_path)
-        logger.info(f"Loaded {len(label_mapped_records)} from prior run.")
-    else:
-        logger.info("No labels file found.")
-        with open(labels_fp, mode="w"):
-            # initialize the file
-            pass
+    # logger.info(f"Loading feature extraction result from '{labels_fp}'...")
+    # # check how many files have been processed already, allows feature extraction to be resumable
+    # label_mapped_records = []
+    # if os.path.isfile(labels_fp):
+    #     with open(labels_fp, mode="r", newline="\n") as labelfile:
+    #         for line in labelfile.readlines():
+    #             header_file_path, _ = json.loads(line)
+    #             label_mapped_records.append(header_file_path)
+    #     logger.info(f"Loaded {len(label_mapped_records)} from prior run.")
+    # else:
+    #     logger.info("No labels file found.")
+    #     with open(labels_fp, mode="w"):
+    #         # initialize the file
+    #         pass
 
-    logger.info(f"Loading feature extraction result from '{features_fp}'...")
-    feature_mapped_records = []
-    if os.path.isfile(features_fp):
-        # get fieldnames of existing records
-        with open(features_fp, "r", newline="\n") as csvfile:
-            reader = csv.reader(csvfile)
-            fieldnames = next(reader)
+    # logger.info(f"Loading feature extraction result from '{features_fp}'...")
+    # feature_mapped_records = []
+    # if os.path.isfile(features_fp):
+    #     # get fieldnames of existing records
+    #     with open(features_fp, "r", newline="\n") as csvfile:
+    #         reader = csv.reader(csvfile)
+    #         fieldnames = next(reader)
 
-        with open(features_fp, "r", newline="\n") as csvfile:
-            reader = csv.DictReader(csvfile, fieldnames=fieldnames)
-            next(reader)  # ignore header
-            with tqdm(reader) as t:
-                for row in t:
-                    feature_mapped_records.append(row["header_file"])
-    else:
-        logger.info("No features file found.")
+    #     with open(features_fp, "r", newline="\n") as csvfile:
+    #         reader = csv.DictReader(csvfile, fieldnames=fieldnames)
+    #         next(reader)  # ignore header
+    #         with tqdm(reader) as t:
+    #             for row in t:
+    #                 feature_mapped_records.append(row["header_file"])
+    # else:
+    #     logger.info("No features file found.")
 
-    logger.info(f"Discovering ECG input files in '{input_directory}'...")
-    process_header_files = tuple(
-        hfp
-        for hfp in glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
-        if hfp not in label_mapped_records or hfp not in feature_mapped_records
-    )
+    # logger.info(f"Discovering ECG input files in '{input_directory}'...")
+    # process_header_files = tuple(
+    #     hfp
+    #     for hfp in glob(os.path.join(input_directory, "**/*.hea"), recursive=True)
+    #     if hfp not in label_mapped_records or hfp not in feature_mapped_records
+    # )
 
-    del label_mapped_records
-    del feature_mapped_records
+    # del label_mapped_records
+    # del feature_mapped_records
 
-    logger.info(
-        "Number of ECG records remain to process: %d", len(process_header_files)
-    )
+    # logger.info(
+    #     "Number of ECG records remain to process: %d", len(process_header_files)
+    # )
 
-    # Setup & populate input queue, then initialize output queue
-    input_queue = multiprocessing.JoinableQueue()
-    for header_file in process_header_files:
-        input_queue.put_nowait(header_file)
-    output_queue = multiprocessing.JoinableQueue()
+    # # Setup & populate input queue, then initialize output queue
+    # input_queue = multiprocessing.JoinableQueue()
+    # for header_file in process_header_files:
+    #     input_queue.put_nowait(header_file)
+    # output_queue = multiprocessing.JoinableQueue()
 
     # calculate CPUs used for feature extraction
     num_cpus = len(os.sched_getaffinity(0))
@@ -182,7 +168,7 @@ def train_12ECG_classifier(
     ram_bottleneck_cpus = max(int(total_ram_GiB / 2.3), 1)
     logger.info(f"Available virtual memory: {total_ram_GiB} GiB")
 
-    # quick test for GPUs used, allow no GPU classifier training
+    # # quick test for GPUs used, allow no GPU classifier training
     try:
         num_gpus = str(subprocess.check_output(["nvidia-smi", "-L"])).count("UUID")
     except Exception:
@@ -195,101 +181,101 @@ def train_12ECG_classifier(
         )
         num_cpus = ram_bottleneck_cpus
 
-    num_feature_extractor_procs = max(num_cpus, 1)
-    feature_extractor_procs = []
-    killed_extractor_procs = []
-    for _ in range(num_feature_extractor_procs):
-        p = multiprocessing.Process(
-            target=feat_extract_process, args=(input_queue, output_queue, fc_parameters)
-        )
-        p.start()
-        feature_extractor_procs.append(p)
+    # num_feature_extractor_procs = max(num_cpus, 1)
+    # feature_extractor_procs = []
+    # killed_extractor_procs = []
+    # for _ in range(num_feature_extractor_procs):
+    #     p = multiprocessing.Process(
+    #         target=feat_extract_process, args=(input_queue, output_queue, fc_parameters)
+    #     )
+    #     p.start()
+    #     feature_extractor_procs.append(p)
 
-    # main process used for concatenating features
-    processed_files_counter = 0
-    out_start = datetime.now()
-    out_log = None
-    avg_records_per_sec = 0
+    # # main process used for concatenating features
+    # processed_files_counter = 0
+    # out_start = datetime.now()
+    # out_log = None
+    # avg_records_per_sec = 0
 
-    # initialize the header if the file does not exist
-    if not os.path.isfile(features_fp):
-        with open(features_fp, "w", newline="\n") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
+    # # initialize the header if the file does not exist
+    # if not os.path.isfile(features_fp):
+    #     with open(features_fp, "w", newline="\n") as csvfile:
+    #         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    #         writer.writeheader()
 
-    with open(features_fp, "a", newline="\n") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        with open(labels_fp, "a") as labelfile:
-            while True:
-                try:
-                    header_file_path, f_dict, dxs = output_queue.get(True, 0.1)
-                    labelfile.write(json.dumps((header_file_path, dxs)) + "\n")
-                    labelfile.flush()
-                    f_dict["header_file"] = header_file_path
-                    writer.writerow(f_dict)
-                    output_queue.task_done()
-                    processed_files_counter += 1
-                except queue.Empty:
-                    # When the output queue is empty and all workers are terminated
-                    # all files have been processed
+    # with open(features_fp, "a", newline="\n") as csvfile:
+    #     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    #     with open(labels_fp, "a") as labelfile:
+    #         while True:
+    #             try:
+    #                 header_file_path, f_dict, dxs = output_queue.get(True, 0.1)
+    #                 labelfile.write(json.dumps((header_file_path, dxs)) + "\n")
+    #                 labelfile.flush()
+    #                 f_dict["header_file"] = header_file_path
+    #                 writer.writerow(f_dict)
+    #                 output_queue.task_done()
+    #                 processed_files_counter += 1
+    #             except queue.Empty:
+    #                 # When the output queue is empty and all workers are terminated
+    #                 # all files have been processed
 
-                    if input_queue.empty() and all(
-                        not p.is_alive() for p in feature_extractor_procs
-                    ):
-                        # input queue is empty and all children processes have exited
-                        break
+    #                 if input_queue.empty() and all(
+    #                     not p.is_alive() for p in feature_extractor_procs
+    #                 ):
+    #                     # input queue is empty and all children processes have exited
+    #                     break
 
-                    elif not input_queue.empty():
-                        # input queue is not empty, restart stopped workers
-                        num_feature_extractor_procs = len(feature_extractor_procs)
-                        for fe_proc_idx in range(num_feature_extractor_procs):
-                            p = feature_extractor_procs[fe_proc_idx]
-                            if p in killed_extractor_procs:
-                                continue
-                            if not p.is_alive():
-                                disp_str = (
-                                    f"{p.pid} (exitcode: {p.exitcode}) is not alive "
-                                    f"while input queue contains {input_queue.qsize()} tasks! "
-                                    "Restarting..."
-                                )
-                                logger.info(disp_str)
-                                p.join()
-                                killed_extractor_procs.append(p)
-                                p_new = multiprocessing.Process(
-                                    target=feat_extract_process,
-                                    args=(input_queue, output_queue),
-                                )
-                                p_new.start()
-                                feature_extractor_procs.append(p_new)
+    #                 elif not input_queue.empty():
+    #                     # input queue is not empty, restart stopped workers
+    #                     num_feature_extractor_procs = len(feature_extractor_procs)
+    #                     for fe_proc_idx in range(num_feature_extractor_procs):
+    #                         p = feature_extractor_procs[fe_proc_idx]
+    #                         if p in killed_extractor_procs:
+    #                             continue
+    #                         if not p.is_alive():
+    #                             disp_str = (
+    #                                 f"{p.pid} (exitcode: {p.exitcode}) is not alive "
+    #                                 f"while input queue contains {input_queue.qsize()} tasks! "
+    #                                 "Restarting..."
+    #                             )
+    #                             logger.info(disp_str)
+    #                             p.join()
+    #                             killed_extractor_procs.append(p)
+    #                             p_new = multiprocessing.Process(
+    #                                 target=feat_extract_process,
+    #                                 args=(input_queue, output_queue),
+    #                             )
+    #                             p_new.start()
+    #                             feature_extractor_procs.append(p_new)
 
-                finally:
-                    out_cur = datetime.now()
-                    if out_log is None or out_cur - out_log > timedelta(seconds=5):
-                        start_delta = out_cur - out_start
+    #             finally:
+    #                 out_cur = datetime.now()
+    #                 if out_log is None or out_cur - out_log > timedelta(seconds=5):
+    #                     start_delta = out_cur - out_start
 
-                        remaining_time, avg_records_per_sec = _eta_calculate(
-                            start_delta,
-                            processed_files_counter,
-                            len(process_header_files),
-                            avg_records_per_sec,
-                        )
+    #                     remaining_time, avg_records_per_sec = _eta_calculate(
+    #                         start_delta,
+    #                         processed_files_counter,
+    #                         len(process_header_files),
+    #                         avg_records_per_sec,
+    #                     )
 
-                        logger.info(
-                            f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {remaining_time} remain)"
-                        )
-                        out_log = out_cur
+    #                     logger.info(
+    #                         f"Processed {processed_files_counter}/{len(process_header_files)} in {start_delta} (est {remaining_time} remain)"
+    #                     )
+    #                     out_log = out_cur
 
-    out_cur = datetime.now()
-    start_delta = out_cur - out_start
-    logger.info(
-        f"Finished processing {processed_files_counter}/{len(process_header_files)} in {start_delta}"
-    )
+    # out_cur = datetime.now()
+    # start_delta = out_cur - out_start
+    # logger.info(
+    #     f"Finished processing {processed_files_counter}/{len(process_header_files)} in {start_delta}"
+    # )
 
     # Close the queues
-    input_queue.close()
-    input_queue.join_thread()
-    output_queue.close()
-    output_queue.join_thread()
+    # input_queue.close()
+    # input_queue.join_thread()
+    # output_queue.close()
+    # output_queue.join_thread()
 
     # print(input_queue.qsize(), output_queue.qsize(), processed_files_counter)
 
@@ -301,15 +287,12 @@ def train_12ECG_classifier(
             header_file_path, dxs = json.loads(line)
             mapped_records[header_file_path] = dxs
 
-    logger.info(f"Loading features_df from '{features_fp}'")
-    features_df = pd.read_csv(
-        features_fp, header=0, names=fieldnames, index_col="header_file"
-    )
-    logger.info("Constructing labels array...")
-    labels = [mapped_records[row[0]] for row in features_df.itertuples()]
-
-    # logger.info("Dropping 'header_file' column from features_df")
-    # features_df.reset_index(drop=True, inplace=True) # is necessary?
+    # logger.info(f"Loading features_df from '{features_fp}'")
+    # features_df = pd.read_csv(
+    #     features_fp, header=0, names=fieldnames, index_col="header_file"
+    # )
+    # logger.info("Constructing labels array...")
+    # labels = [mapped_records[row[0]] for row in features_df.itertuples()]
 
     # Load the SNOMED CT code mapping table
     with open("data/snomed_ct_dx_map.json", "r") as f:
@@ -320,25 +303,82 @@ def train_12ECG_classifier(
     assert rows == cols, "rows and cols mismatch"
     scored_codes = rows
 
-    for experiment_num in range(experiments_to_run):
-        with ElapsedTimer() as timer:
-            logger.info(f"Running experiment #{experiment_num}")
+    logger.info("Loading features csv file header")
+    with ElapsedTimer() as t:
+        with open(os.path.join(output_directory, "features.csv"), "r") as f:
+            reader = csv.reader(f)
+            header = next(reader)
 
-            logger.info(
-                f"Splitting data into training and evaluation split ({evaluation_size})"
-            )
-            if evaluation_size > 0:
-                (
-                    train_features,
-                    eval_features,
-                    train_labels,
-                    eval_labels,
-                ) = train_test_split(features_df, labels, test_size=evaluation_size)
-            else:
-                train_features = features_df
-                train_labels = labels
-                eval_features = pd.DataFrame({})
-                eval_labels = []
+    for experiment_fp in experiment_fps:
+        with ElapsedTimer() as timer:
+            logger.info(f"Rerunning experiment {experiment_fp}")
+
+            experiment = joblib.load(experiment_fp)
+
+            # logger.info(
+            #     f"Splitting data into training and evaluation split ({evaluation_size})"
+            # )
+            # if evaluation_size > 0:
+            #     (
+            #         train_features,
+            #         eval_features,
+            #         train_labels,
+            #         eval_labels,
+            #     ) = train_test_split(features_df, labels, test_size=evaluation_size)
+            # else:
+            #     train_features = features_df
+            #     train_labels = labels
+            #     eval_features = pd.DataFrame({})
+            #     eval_labels = []
+
+            train_record_names = experiment["train_records"]
+            eval_record_names = experiment["eval_records"]
+
+            logger.info(f"Determining mean experiment feature importances...")
+            feat_importance_data = {}
+            for k, v in experiment.items():
+                if not is_number(k):
+                    continue
+                abbrv, dx = SNOMED_CODE_MAP[str(k)]
+                model = experiment[str(k)]
+                feat_importance_data[abbrv] = feat_importance_data.get(abbrv, []) + [model.feature_importances_]
+
+            all_importances = []
+            for label, v in feat_importance_data.items():
+                ft_data = np.stack(v)
+                all_importances.append(ft_data)
+
+            importances = np.concatenate(all_importances, axis=0)
+            mean_importances = np.mean(importances, axis=0)
+
+            all_importances_rank = importances.argsort(axis=1)
+            # importances_reciprocal_rank = 1 / (all_importances_rank + 1)
+            # rank_importances = np.mean(importances_reciprocal_rank, axis=0)
+
+            importance_data = {}
+            # importance_data["rank_importances"] = dict(zip(header[1:], rank_importances.tolist()))
+            # importance_data["rank_sorted_keys"] = sorted(importance_data["rank_importances"].keys(), key=lambda x:importance_data["rank_importances"][x], reverse=True)
+            importance_data["mean_importances"] = dict(zip(header[1:], mean_importances.tolist()))
+            importance_data["sorted_keys"] = sorted(importance_data["mean_importances"].keys(), key=lambda x:importance_data["mean_importances"][x], reverse=True)
+
+            logger.info(f"Loading feature limited train/eval data {features_fp}...")
+
+            with ElapsedTimer() as t:
+
+                features_df = pd.read_csv(
+                    features_fp,
+                    header=0,
+                    names=fieldnames,
+                    index_col="header_file",
+                    usecols = ["header_file"] + importance_data["sorted_keys"][:limit_features_to]
+                )
+
+                train_features = features_df.loc[train_record_names]
+                train_labels = [mapped_records[row[0]] for row in train_features.itertuples()]
+                eval_features = features_df.loc[eval_record_names]
+                eval_labels = [mapped_records[row[0]] for row in eval_features.itertuples()]
+
+            logger.info(f"Took {t.duration}s")
 
             logger.info(f"Training dataset shape: {train_features.shape}")
             logger.info(f"Evaluation dataset shape: {eval_features.shape}")
@@ -373,9 +413,9 @@ def train_12ECG_classifier(
             else:
                 logger.info("Metrics calculated on training data, no evaluation set!")
                 _display_metrics(logger, train_features, train_labels, to_save_data)
-            _save_experiment(logger, output_directory, to_save_data)
+            _save_experiment(logger, output_directory, to_save_data, limit_features=limit_features_to)
 
-        logger.info(f"Experiment {experiment_num} took {timer.duration:.2f} seconds")
+        logger.info(f"Rerun {experiment_fp} took {timer.duration:.2f} seconds")
 
 
 def _eta_calculate(
@@ -542,11 +582,11 @@ def _display_metrics(logger, features_df, ground_truth, to_save_data):
     to_save_data["challenge_metric"] = challenge_metric
 
 
-def _save_experiment(logger, output_directory, to_save_data):
+def _save_experiment(logger, output_directory, to_save_data, limit_features=0):
     logger.info("Saving model...")
 
     cur_sec = int(time())
-    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}.sav")
+    filename = os.path.join(output_directory, f"finalized_model_{cur_sec}_feat_{limit_features}.sav")
     joblib.dump(to_save_data, filename, protocol=0)
 
     logger.info(f"Saved to {filename}")
