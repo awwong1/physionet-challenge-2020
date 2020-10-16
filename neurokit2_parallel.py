@@ -1,6 +1,7 @@
 # This file attempts to replicate the
 # neurokit2.ecg_process and ecg_interval_related methods,
 # but vectorized to support multi-lead ECGs without loops.
+import json
 import re
 import functools
 import warnings
@@ -913,9 +914,7 @@ def wfdb_record_to_feature_dataframe(r, fc_parameters=None):
     else:
         meta_dict = {"age": (age,), "sex": (sex,)}
 
-    record_features = pd.concat(
-        [pd.DataFrame(meta_dict)] + record_features, axis=1
-    )
+    record_features = pd.concat([pd.DataFrame(meta_dict)] + record_features, axis=1)
 
     return record_features, dx
 
@@ -971,9 +970,9 @@ def lead_to_feature_dataframe(
                 hb_df = tsfresh.extract_features(
                     pd.DataFrame(
                         {
-                            "lead": [0, 0, 0],
-                            "time": [0, 0.5, 1],
-                            column_value: [0.5, 0.5, 0.5],
+                            "lead": [0],
+                            "time": [0],
+                            column_value: [0],
                         }
                     ),
                     column_id="lead",
@@ -1008,9 +1007,9 @@ def lead_to_feature_dataframe(
                 sig_df = tsfresh.extract_features(
                     pd.DataFrame(
                         {
-                            "lead": [0, 0, 0],
-                            "time": [0, 0.5, 1],
-                            column_value: [0.5, 0.5, 0.5],
+                            "lead": [0],
+                            "time": [0],
+                            column_value: [0],
                         }
                     ),
                     column_id="lead",
@@ -1091,7 +1090,10 @@ def _tsfresh_heartbeat_dataframe(
 
     hb_input_df = pd.DataFrame(
         {
-            "lead": [0,] * hb_num_samples,
+            "lead": [
+                0,
+            ]
+            * hb_num_samples,
             "time": hb_times,
             column_value: best_heartbeat.tolist(),
         }
@@ -1150,7 +1152,14 @@ def _tsfresh_signal_dataframe(
     times = np.linspace(0, duration, num_samples).tolist()
     column_value = f"{lead_name}_sig"
     sig_input_df = pd.DataFrame(
-        {"lead": [0,] * num_samples, "time": times, column_value: cleaned_signal,}
+        {
+            "lead": [
+                0,
+            ]
+            * num_samples,
+            "time": times,
+            column_value: cleaned_signal,
+        }
     )
 
     if fc_parameters:
@@ -1185,7 +1194,13 @@ def ecg_clean(ecg_signal, sampling_rate=500):
 
     # Remove slow drift with highpass Butterworth.
     sos = scipy.signal.butter(
-        5, [0.5,], btype="highpass", output="sos", fs=sampling_rate
+        5,
+        [
+            0.5,
+        ],
+        btype="highpass",
+        output="sos",
+        fs=sampling_rate,
     )
     clean = scipy.signal.sosfiltfilt(sos, ecg_signal, axis=0).T
 
@@ -1260,7 +1275,14 @@ def _ecg_peaks_partial(
             rpeaks_info, desired_length=len(ecg_signal), peak_indices=rpeaks_info
         )
     else:
-        instant_peaks = pd.DataFrame({"ECG_R_Peaks": [0.0,] * len(ecg_signal)})
+        instant_peaks = pd.DataFrame(
+            {
+                "ECG_R_Peaks": [
+                    0.0,
+                ]
+                * len(ecg_signal)
+            }
+        )
     instant_peaks["ECG_Sig_Name"] = ecg_lead_names[lead_idx]
 
     return instant_peaks, rpeaks_info
@@ -1476,12 +1498,30 @@ def _ecg_delineate_partial(sig_info_idx_name, sampling_rate=500):
         ref = (
             pd.DataFrame(
                 {
-                    "ECG_P_Peaks": [0.0,] * sig_len,
-                    "ECG_Q_Peaks": [0.0,] * sig_len,
-                    "ECG_S_Peaks": [0.0,] * sig_len,
-                    "ECG_T_Peaks": [0.0,] * sig_len,
-                    "ECG_P_Onsets": [0.0,] * sig_len,
-                    "ECG_T_Offsets": [0.0,] * sig_len,
+                    "ECG_P_Peaks": [
+                        0.0,
+                    ]
+                    * sig_len,
+                    "ECG_Q_Peaks": [
+                        0.0,
+                    ]
+                    * sig_len,
+                    "ECG_S_Peaks": [
+                        0.0,
+                    ]
+                    * sig_len,
+                    "ECG_T_Peaks": [
+                        0.0,
+                    ]
+                    * sig_len,
+                    "ECG_P_Onsets": [
+                        0.0,
+                    ]
+                    * sig_len,
+                    "ECG_T_Offsets": [
+                        0.0,
+                    ]
+                    * sig_len,
                 }
             ),
             {
@@ -1498,8 +1538,7 @@ def _ecg_delineate_partial(sig_info_idx_name, sampling_rate=500):
 
 
 def ecg_intervalrelated(proc_df, sampling_rate=500, ecg_lead_names=ECG_LEAD_NAMES):
-    """multi-lead version of nk.ecg_intervalrelated
-    """
+    """multi-lead version of nk.ecg_intervalrelated"""
     df_groupby = proc_df.groupby("ECG_Sig_Name")
     record_feats = []
     for ecg_lead_name in ecg_lead_names:
@@ -1553,7 +1592,9 @@ def get_intervalrelated_features(
 
     df_sig_names = []
     for ln in ECG_LEAD_NAMES:
-        df_sig_names += [ln,] * sig_len
+        df_sig_names += [
+            ln,
+        ] * sig_len
 
     peaks_df, peaks_info = ecg_peaks(
         cleaned_signals, sampling_rate=sampling_rate, ecg_lead_names=ecg_lead_names
@@ -1585,8 +1626,7 @@ def get_intervalrelated_features(
 def best_heartbeats_from_ecg_signal(
     proc_df, sampling_rate=500, ecg_lead_names=ECG_LEAD_NAMES
 ):
-    """utility method for tsfresh feature extraction
-    """
+    """utility method for tsfresh feature extraction"""
     best_heartbeats = []
     for lead_name in ecg_lead_names:
         try:
@@ -1616,7 +1656,10 @@ def best_heartbeats_from_ecg_signal(
 
             hb_input_df = pd.DataFrame(
                 {
-                    "lead": [lead_name,] * hb_num_samples,
+                    "lead": [
+                        lead_name,
+                    ]
+                    * hb_num_samples,
                     "time": hb_times,
                     "hb_sig": best_heartbeat.tolist(),
                 }
@@ -1626,9 +1669,15 @@ def best_heartbeats_from_ecg_signal(
             hb_times = np.linspace(0, 1.0, hb_num_samples).tolist()
             hb_input_df = pd.DataFrame(
                 {
-                    "lead": [lead_name,] * hb_num_samples,
+                    "lead": [
+                        lead_name,
+                    ]
+                    * hb_num_samples,
                     "time": hb_times,
-                    "hb_sig": [0.0,] * hb_num_samples,
+                    "hb_sig": [
+                        0.0,
+                    ]
+                    * hb_num_samples,
                 }
             )
 
@@ -1667,7 +1716,9 @@ def signal_to_tsfresh_df(
     # convert to tsfresh compatible dataframe
     df_sig_names = []
     for ln in ecg_lead_names:
-        df_sig_names += [ln,] * num_samples
+        df_sig_names += [
+            ln,
+        ] * num_samples
 
     times = np.linspace(0, duration, num_samples).tolist()
     input_df = pd.DataFrame(
@@ -1679,3 +1730,65 @@ def signal_to_tsfresh_df(
     )
 
     return input_df
+
+
+def parse_fc_parameters(important_features):
+    """Takes importances_rank.json, 'sorted_keys' value,
+    returns tsfresh compatible fc_parameters dictionary by lead
+    """
+
+    per_lead_fc_params = {}
+    for important_feature in sorted(important_features):
+        lead_w_feat_type, *tsfresh_config = important_feature.split("__")
+
+        # lead, feat_type = lead_w_feat_type.split("_")
+        lead_feat_type_fc = per_lead_fc_params.get(lead_w_feat_type, {})
+        if len(tsfresh_config) == 0:
+            # this is an interval related HRV metric, or meta
+            assert any(
+                key in lead_w_feat_type for key in KEYS_INTERVALRELATED + ["age", "sex"]
+            ), f"Invalid feature: {important_feature}"
+        elif len(tsfresh_config) == 1:
+            lead_feat_type_fc[tsfresh_config[0]] = None
+        else:
+            feat_key = tsfresh_config[0]
+            feat_args = tsfresh_config[1:]
+
+            lead_feat_list = lead_feat_type_fc.get(feat_key, [])
+            lead_feat_dict = {}
+
+            for feat_arg in feat_args:
+                *feat_arg_key, feat_arg_val = feat_arg.split("_")
+                feat_arg_key = "_".join(feat_arg_key)
+
+                try:
+                    if feat_arg_val.startswith("(") and feat_arg_val.endswith(")"):
+                        # check for tuple
+                        feat_arg_val = tuple(
+                            map(
+                                int,
+                                feat_arg_val.replace("(", "")
+                                .replace(")", "")
+                                .split(","),
+                            )
+                        )
+                    else:
+                        # parse string, float, int
+                        feat_arg_val = json.loads(feat_arg_val)
+                except ValueError:
+                    # check for boolean
+                    if feat_arg_val == "True":
+                        feat_arg_val = True
+                    elif feat_arg_val == "False":
+                        feat_arg_val = False
+
+                lead_feat_dict[feat_arg_key] = feat_arg_val
+            lead_feat_list.append(lead_feat_dict)
+            lead_feat_type_fc[feat_key] = lead_feat_list
+
+        if len(tsfresh_config) > 0:
+            per_lead_fc_params[lead_w_feat_type] = lead_feat_type_fc
+        else:
+            per_lead_fc_params[lead_w_feat_type] = None
+
+    return per_lead_fc_params
