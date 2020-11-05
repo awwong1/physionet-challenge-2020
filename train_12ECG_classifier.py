@@ -196,6 +196,11 @@ def train_12ECG_classifier(
         num_cpus = ram_bottleneck_cpus
 
     num_feature_extractor_procs = max(num_cpus, 1)
+
+    # limit to 10 cores
+    num_feature_extractor_procs = min(10, num_feature_extractor_procs)
+    logger.info(f"limiting to {num_feature_extractor_procs} procs")
+
     feature_extractor_procs = []
     killed_extractor_procs = []
     for _ in range(num_feature_extractor_procs):
