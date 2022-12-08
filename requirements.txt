@@ -5,7 +5,7 @@ bidict==0.19.0
 biosppy==0.6.1
 black==19.10b0
 bleach==3.1.5
-certifi==2020.6.20
+certifi==2022.12.7
 chardet==3.0.4
 click==7.1.2
 cloudpickle==1.5.0
